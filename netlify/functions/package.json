@@ -1,0 +1,10 @@
+{
+  "name": "netlify-functions",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {
+    "@netlify/functions": "^2.6.0",
+    "firebase-admin": "^11.11.1",
+    "firebase-functions": "^4.3.0"
+  }
+} 
