@@ -13,7 +13,8 @@ import {
   Tag,
   ExternalLink,
   Trash2,
-  Plus
+  Plus,
+  RefreshCw
 } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -24,6 +25,7 @@ import { TicketComments } from './TicketComments';
 import { CollaborativeComments } from './CollaborativeComments';
 import { statusLabels, priorityLabels, categoryLabels } from '../types/ticket';
 import type { Ticket, TicketStatus, TicketPriority } from '../types/ticket';
+import { ClickUpService } from '../services/clickupService';
 
 interface TicketDetailsModalProps {
   ticket: Ticket;
@@ -35,7 +37,7 @@ interface TicketDetailsModalProps {
 export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }: TicketDetailsModalProps) {
   const navigate = useNavigate();
   const { userData } = useAuthStore();
-  const { updateTicket, deleteTicket } = useTicketStore();
+  const { updateTicket, deleteTicket, syncWithClickUp } = useTicketStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -48,6 +50,8 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
   const [showDeadlineModal, setShowDeadlineModal] = useState(false);
   const [extensionHours, setExtensionHours] = useState(24); // Padrão: 24 horas
   const [extensionReason, setExtensionReason] = useState('');
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncSuccess, setSyncSuccess] = useState(false);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -98,7 +102,7 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
   };
 
   const handlePriorityChange = async (newPriority: TicketPriority) => {
-    if (!userData?.role === 'admin' && ticket.priorityLockedBy) {
+    if (userData?.role !== 'admin' && ticket.priorityLockedBy) {
       return;
     }
 
@@ -207,13 +211,62 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
     return new Date() > new Date(deadline);
   };
 
+  const handleSyncWithClickUp = async () => {
+    if (ticket.taskId) return; // Já está sincronizado
+    
+    try {
+      setSyncLoading(true);
+      setError(null);
+      
+      console.log("Iniciando sincronização com ClickUp para o ticket:", ticket.id);
+      
+      // Chamar a função de sincronização do store
+      const updatedTicket = await syncWithClickUp(ticket);
+      
+      if (updatedTicket && updatedTicket.taskId) {
+        setSyncSuccess(true);
+        onUpdate(updatedTicket);
+        
+        // Reset visual feedback after 3 seconds
+        setTimeout(() => {
+          setSyncSuccess(false);
+        }, 3000);
+      } else {
+        // Exibir mensagem mais detalhada sobre o erro
+        const errorMsg = 'Não foi possível sincronizar o ticket com o ClickUp. ' + 
+          'Verifique nos logs do console os detalhes do erro. ' +
+          'Possíveis causas: API Key incorreta, Lista não encontrada, ou permissões insuficientes.';
+        
+        console.error('Falha na sincronização com ClickUp:', errorMsg);
+        setError(errorMsg);
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao sincronizar com o ClickUp';
+      console.error('Exceção ao sincronizar com ClickUp:', errorMessage);
+      
+      // Tratamento especial para o erro 404 (Not Found)
+      if (errorMessage.includes('404') || errorMessage.includes('not found') || errorMessage.includes('não encontrado')) {
+        setError(
+          'Tarefa não encontrada no ClickUp, o que é esperado para tickets novos. ' +
+          'Ao clicar em "Sincronizar com ClickUp", uma nova tarefa será criada e associada a este ticket. ' +
+          'Tente novamente.'
+        );
+      } else {
+        // Exibir mensagem de erro mais descritiva para outros tipos de erro
+        setError(`Erro ao sincronizar com ClickUp: ${errorMessage}. Verifique a configuração na aba ClickUp.`);
+      }
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
   if (error) {
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
         <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-medium text-red-600">Erro</h3>
-            <button onClick={onClose} className="text-gray-400 hover:text-gray-500">
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-500" title="Fechar">
               <X className="h-5 w-5" />
             </button>
           </div>
@@ -247,6 +300,20 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                   }`}>
                     {statusLabels[ticket.status]}
                   </span>
+
+                  {/* Status de sincronização com ClickUp */}
+                  {ticket.taskId ? (
+                    <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-green-50 text-green-600">
+                      <LinkIcon className="h-3.5 w-3.5 mr-1" />
+                      Sincronizado com ClickUp
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-600">
+                      <AlertTriangle className="h-3.5 w-3.5 mr-1" />
+                      Não sincronizado com ClickUp
+                    </span>
+                  )}
+
                   <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium ${
                     ticket.priority === 'low' ? 'bg-gray-100 text-gray-800' :
                     ticket.priority === 'medium' ? 'bg-blue-100 text-blue-800' :
@@ -262,6 +329,34 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                 </div>
               </div>
               <div className="flex items-center space-x-2">
+                {/* Botão de sincronização com ClickUp - só aparece se o ticket não estiver sincronizado */}
+                {!ticket.taskId && (
+                  <button
+                    onClick={handleSyncWithClickUp}
+                    disabled={syncLoading}
+                    className={`inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md ${
+                      syncSuccess 
+                        ? 'bg-green-600 text-white hover:bg-green-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    } disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200`}
+                    title="Sincronizar com ClickUp"
+                  >
+                    {syncLoading ? (
+                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    ) : syncSuccess ? (
+                      <>
+                        <LinkIcon className="h-4 w-4 mr-2" />
+                        Sincronizado!
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        Sincronizar com ClickUp
+                      </>
+                    )}
+                  </button>
+                )}
+                
                 <button
                   onClick={() => setDeleteModalOpen(true)}
                   className="inline-flex items-center px-3 py-2 text-sm font-medium text-red-600 hover:text-red-700 transition-colors"
@@ -398,16 +493,20 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                 {/* Status */}
                 <div className="bg-white rounded-lg border border-gray-200 p-6">
                   <h3 className="text-lg font-medium text-gray-900 mb-4">Status</h3>
-                  <select
-                    value={currentStatus}
-                    onChange={(e) => handleStatusChange(e.target.value as TicketStatus)}
-                    disabled={loading}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
-                  >
-                    {Object.entries(statusLabels).map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </select>
+                  <div className="relative text-gray-600 mb-2">
+                    <select
+                      id="ticketStatus"
+                      value={currentStatus}
+                      onChange={(e) => setCurrentStatus(e.target.value as TicketStatus)}
+                      disabled={loading}
+                      className="block appearance-none w-full bg-white border border-gray-300 hover:border-gray-400 px-4 py-2 pr-8 rounded shadow leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Status do ticket"
+                    >
+                      {Object.entries(statusLabels).map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 {/* Prioridade */}
@@ -432,16 +531,20 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                       </div>
                     </div>
                   )}
-                  <select
-                    value={currentPriority}
-                    onChange={(e) => handlePriorityChange(e.target.value as TicketPriority)}
-                    disabled={loading || (!userData?.role === 'admin' && ticket.priorityLockedBy)}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
-                  >
-                    {Object.entries(priorityLabels).map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
-                    ))}
-                  </select>
+                  <div className="relative text-gray-600 mb-4">
+                    <select
+                      id="ticketPriority"
+                      value={currentPriority}
+                      onChange={(e) => setCurrentPriority(e.target.value as TicketPriority)}
+                      disabled={loading}
+                      className="block appearance-none w-full bg-white border border-gray-300 hover:border-gray-400 px-4 py-2 pr-8 rounded shadow leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Prioridade do ticket"
+                    >
+                      {Object.entries(priorityLabels).map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </select>
+                  </div>
                   {userData?.role === 'admin' && currentPriority !== ticket.priority && (
                     <div className="mt-4">
                       <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -525,7 +628,8 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                   <select
                     value={extensionHours}
                     onChange={(e) => setExtensionHours(Number(e.target.value))}
-                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 text-sm"
+                    className="block w-full p-2 border border-gray-300 rounded-md mb-4"
+                    title="Horas de extensão do prazo"
                   >
                     <option value={4}>4 horas</option>
                     <option value={8}>8 horas</option>

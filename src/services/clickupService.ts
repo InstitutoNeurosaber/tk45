@@ -1,8 +1,10 @@
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { ClickUpAPI } from '../lib/clickup';
 import type { Ticket, Comment } from '../types/ticket';
 import type { ClickUpConfig } from '../types/clickup';
+
+const CLICKUP_API_BASE = 'https://api.clickup.com/api/v2';
 
 export class ClickUpService {
   private async getConfig(): Promise<ClickUpConfig | null> {
@@ -50,6 +52,150 @@ export class ClickUpService {
       throw new Error('Configuração do ClickUp não encontrada ou inativa');
     }
     return new ClickUpAPI(config.apiKey);
+  }
+
+  /**
+   * Sincroniza um ticket com o ClickUp, criando ou atualizando uma tarefa
+   * @param ticket Ticket a ser sincronizado
+   * @returns ID da tarefa criada/atualizada no ClickUp
+   */
+  async syncTicketWithClickUp(ticket: Ticket): Promise<string | null> {
+    try {
+      const config = await this.getConfig();
+      if (!config) {
+        console.log('Configuração do ClickUp não encontrada. Pulando sincronização.');
+        return null;
+      }
+
+      if (!config.listId) {
+        console.error('ListID não encontrado na configuração do ClickUp');
+        return null;
+      }
+
+      console.log(`Sincronizando ticket ${ticket.id} com o ClickUp...`);
+      console.log(`Lista selecionada: ${config.listId}`);
+      console.log(`URL da requisição: ${CLICKUP_API_BASE}/list/${config.listId}/task`);
+      
+      const api = await this.getAPI();
+      
+      // Verificar se a lista existe antes de tentar criar a tarefa
+      try {
+        console.log(`Verificando se a lista ${config.listId} existe...`);
+        // Não podemos verificar diretamente a lista, mas podemos tentar obter as tarefas dela
+        await api.getAllTasks(config.listId);
+        console.log(`Lista ${config.listId} encontrada com sucesso.`);
+      } catch (error) {
+        console.error(`Erro ao verificar lista ${config.listId}:`, error);
+        console.error('A lista configurada não existe ou não está acessível.');
+        throw new Error(`Lista com ID ${config.listId} não encontrada ou inacessível`);
+      }
+      
+      // Se o ticket já tem uma tarefa associada, verifica se ela existe
+      if (ticket.taskId) {
+        try {
+          console.log(`Verificando se a tarefa ${ticket.taskId} existe no ClickUp...`);
+          const taskExists = await api.taskExists(ticket.taskId);
+          if (taskExists) {
+            // Atualiza a tarefa existente
+            console.log(`Tarefa ${ticket.taskId} encontrada no ClickUp, atualizando...`);
+            await api.updateTaskStatus(ticket.taskId, this.mapStatus(ticket.status));
+            
+            // Atualiza outros campos se necessário
+            const updateData = {
+              name: ticket.title,
+              description: ticket.description,
+              priority: this.getPriorityLevel(ticket.priority),
+              due_date: ticket.deadline instanceof Date ? ticket.deadline.getTime() : new Date(ticket.deadline).getTime()
+            };
+            
+            console.log(`Dados para atualizar:`, updateData);
+            await api.updateTask(ticket.taskId, updateData);
+            return ticket.taskId;
+          } else {
+            console.log(`Tarefa ${ticket.taskId} não encontrada no ClickUp. Criando nova.`);
+          }
+        } catch (error) {
+          console.error(`Erro ao verificar tarefa ${ticket.taskId}:`, error);
+          console.log('Continuando para criar uma nova tarefa...');
+          // Continuará para criar uma nova tarefa
+        }
+      }
+      
+      // Prepara dados para criar nova tarefa
+      try {
+        // Validação de dados antes de criar
+        if (!ticket.title) {
+          console.error("Título do ticket está vazio");
+          throw new Error("Título do ticket é obrigatório para criar no ClickUp");
+        }
+        
+        // Garantir que a data de prazo está em formato válido
+        let dueDate: number | null = null;
+        if (ticket.deadline) {
+          if (ticket.deadline instanceof Date) {
+            dueDate = ticket.deadline.getTime();
+          } else {
+            try {
+              const date = new Date(ticket.deadline);
+              if (isNaN(date.getTime())) {
+                console.warn("Data de prazo inválida, usando data atual + 7 dias");
+                dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).getTime();
+              } else {
+                dueDate = date.getTime();
+              }
+            } catch (e) {
+              console.warn("Erro ao converter data de prazo, usando data atual + 7 dias");
+              dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).getTime();
+            }
+          }
+        } else {
+          console.warn("Ticket sem prazo definido, usando data atual + 7 dias");
+          dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).getTime();
+        }
+        
+        const taskData = {
+          id: ticket.id,
+          title: ticket.title,
+          name: ticket.title,
+          description: ticket.description || "Sem descrição",
+          status: this.mapStatus(ticket.status),
+          priority: this.getPriorityLevel(ticket.priority),
+          due_date: dueDate
+        };
+        console.log(`Dados para criar tarefa:`, taskData);
+        
+        // Cria uma nova tarefa
+        console.log(`Criando nova tarefa para ticket ${ticket.id} na lista ${config.listId} do ClickUp`);
+        const response = await api.createTask(config.listId, taskData);
+        
+        console.log(`Resposta completa da API:`, JSON.stringify(response));
+        
+        if (response && typeof response === 'object' && 'id' in response) {
+          console.log(`Tarefa criada com sucesso no ClickUp. ID: ${response.id}`);
+          return response.id as string;
+        } else {
+          console.error('Resposta inválida ao criar tarefa:', response);
+          throw new Error("Resposta da API não contém ID da tarefa");
+        }
+      } catch (createError) {
+        console.error("Erro específico na criação da tarefa:", createError);
+        if (createError instanceof Error) {
+          console.error('Detalhes do erro de criação:', createError.message);
+          console.error('Stack trace de criação:', createError.stack);
+        }
+        throw createError;
+      }
+    } catch (error) {
+      console.error('Erro ao sincronizar ticket com ClickUp:', error);
+      // Registra mais detalhes sobre o erro
+      if (error instanceof Error) {
+        console.error('Detalhes do erro:', error.message);
+        console.error('Stack trace:', error.stack);
+        // Propagar o erro para mostrar no frontend
+        throw new Error(`Erro ao sincronizar com ClickUp: ${error.message}`);
+      }
+      throw new Error('Erro desconhecido ao sincronizar com ClickUp');
+    }
   }
 
   async createTaskFromTicket(ticket: Ticket): Promise<void> {
