@@ -9,9 +9,10 @@ import type { Ticket, Comment } from '../types/ticket';
 
 interface CollaborativeCommentsProps {
   ticket: Ticket;
+  onCommentAdded?: (comment: Comment) => void;
 }
 
-export function CollaborativeComments({ ticket }: CollaborativeCommentsProps) {
+export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeCommentsProps) {
   const { user, userData: currentUserData } = useAuthStore();
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -47,7 +48,7 @@ export function CollaborativeComments({ ticket }: CollaborativeCommentsProps) {
     try {
       setIsSubmitting(true);
 
-      await addComment({
+      const comment = await addComment({
         content: newComment.trim(),
         userId: user.uid,
         userName: currentUserData.name,
@@ -55,6 +56,7 @@ export function CollaborativeComments({ ticket }: CollaborativeCommentsProps) {
         createdAt: new Date()
       });
 
+      onCommentAdded?.(comment);
       setNewComment('');
     } catch (error) {
       console.error('Erro ao enviar comentário:', error);
@@ -131,13 +133,15 @@ export function CollaborativeComments({ ticket }: CollaborativeCommentsProps) {
         await uploadBytes(fileRef, file);
         const imageUrl = await getDownloadURL(fileRef);
         
-        await addComment({
+        const comment = await addComment({
           content: `![${file.name}](${imageUrl})`,
           userId: user.uid,
           userName: currentUserData.name,
           ticketId: ticket.id,
           createdAt: new Date()
         });
+
+        onCommentAdded?.(comment);
       }
     } catch (error) {
       console.error('Erro ao enviar imagem:', error);

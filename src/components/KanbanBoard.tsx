@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import {
   DndContext,
   DragOverlay,
-  closestCenter,
+  pointerWithin,
+  rectIntersection,
+  useDraggable,
   MouseSensor,
   TouchSensor,
   useSensor,
@@ -11,6 +13,11 @@ import {
   DragEndEvent,
   DragOverEvent,
 } from '@dnd-kit/core';
+import { 
+  SortableContext,
+  arrayMove,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
 import { KanbanColumn } from './KanbanColumn';
 import { KanbanCard } from './KanbanCard';
 import { useTicketStore } from '../stores/ticketStore';
@@ -31,14 +38,14 @@ export function KanbanBoard({ tickets: initialTickets, onTicketClick, onTicketMo
 
   const mouseSensor = useSensor(MouseSensor, {
     activationConstraint: {
-      distance: 1,
+      distance: 8,
     },
   });
 
   const touchSensor = useSensor(TouchSensor, {
     activationConstraint: {
       delay: 50,
-      tolerance: 5,
+      tolerance: 8,
     },
   });
 
@@ -51,62 +58,90 @@ export function KanbanBoard({ tickets: initialTickets, onTicketClick, onTicketMo
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
     setActiveId(active.id as string);
+    console.log('Iniciando drag:', active.id);
     document.body.style.cursor = 'grabbing';
   };
 
   const handleDragOver = (event: DragOverEvent) => {
     const { active, over } = event;
-    if (!over) return;
+    
+    if (!over) {
+      console.log('Não está sobre nada');
+      return;
+    }
 
+    console.log('Drag over:', over.id);
+    
     const activeTicket = initialTickets.find(t => t.id === active.id);
     const overId = over.id as string;
 
     if (!activeTicket) return;
 
-    const overColumn = overId.startsWith('column-') ? overId.replace('column-', '') as TicketStatus : null;
-    if (overColumn && overColumn !== activeTicket.status) {
-      setPendingStatus({ ticketId: activeTicket.id, status: overColumn });
-      optimisticUpdateStatus(activeTicket.id, overColumn);
+    if (typeof overId === 'string' && overId.startsWith('column-')) {
+      const overColumn = overId.replace('column-', '') as TicketStatus;
+      
+      console.log('Sobre coluna:', overColumn);
+      
+      if (overColumn !== activeTicket.status) {
+        console.log('Mudando status de', activeTicket.status, 'para', overColumn);
+        setPendingStatus({ ticketId: activeTicket.id, status: overColumn });
+        optimisticUpdateStatus(activeTicket.id, overColumn);
+      }
     }
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
+    console.log('Drag end');
     const { active, over } = event;
     document.body.style.cursor = '';
 
-    if (!over || !pendingStatus) {
-      setActiveId(null);
-      setPendingStatus(null);
+    if (!over) {
+      console.log('Sem destino válido');
+      resetDragState();
+      return;
+    }
+
+    console.log('Destino final:', over.id);
+    
+    if (!pendingStatus) {
+      console.log('Sem mudança de status pendente');
+      resetDragState();
       return;
     }
 
     const activeTicket = initialTickets.find(t => t.id === active.id);
-    if (!activeTicket) return;
+    if (!activeTicket) {
+      resetDragState();
+      return;
+    }
 
     try {
+      console.log('Atualizando ticket:', pendingStatus.ticketId, 'para', pendingStatus.status);
       await updateTicketStatus(pendingStatus.ticketId, pendingStatus.status);
       
-      // Notificar componente pai sobre a mudança
       if (onTicketMove) {
         onTicketMove(pendingStatus.ticketId, pendingStatus.status);
       }
     } catch (error) {
       console.error('Erro ao mover ticket:', error);
-      // Reverter otimismo em caso de erro
       optimisticUpdateStatus(activeTicket.id, activeTicket.status);
     }
 
-    setActiveId(null);
-    setPendingStatus(null);
+    resetDragState();
   };
 
   const handleDragCancel = () => {
+    console.log('Drag cancelado');
     if (pendingStatus) {
       const ticket = initialTickets.find(t => t.id === pendingStatus.ticketId);
       if (ticket) {
         optimisticUpdateStatus(ticket.id, ticket.status);
       }
     }
+    resetDragState();
+  };
+
+  const resetDragState = () => {
     setActiveId(null);
     setPendingStatus(null);
     document.body.style.cursor = '';
@@ -117,7 +152,7 @@ export function KanbanBoard({ tickets: initialTickets, onTicketClick, onTicketMo
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={rectIntersection}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
@@ -136,9 +171,12 @@ export function KanbanBoard({ tickets: initialTickets, onTicketClick, onTicketMo
         ))}
       </div>
 
-      <DragOverlay>
+      <DragOverlay dropAnimation={{
+        duration: 100,
+        easing: 'cubic-bezier(0.2, 0, 0.15, 1)',
+      }}>
         {activeId && activeTicket ? (
-          <div className="transform scale-105 rotate-[-2deg]">
+          <div className="shadow-md transform scale-[1.02]">
             <KanbanCard
               ticket={activeTicket}
               isDragging={true}

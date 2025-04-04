@@ -231,7 +231,7 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
   return (
     <>
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[85vh] overflow-hidden mb-8">
           {/* Cabeçalho */}
           <div className="relative px-8 py-6 border-b border-gray-200">
             <div className="flex items-center justify-between">
@@ -271,7 +271,8 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                 </button>
                 <button
                   onClick={onClose}
-                  className="text-gray-400 hover:text-gray-500 transition-colors"
+                  className="inline-flex items-center justify-center w-12 h-12 rounded-full text-gray-600 hover:text-gray-800 hover:bg-gray-100 transition-all duration-200 border border-gray-200"
+                  title="Fechar detalhes"
                 >
                   <X className="h-6 w-6" />
                 </button>
@@ -344,7 +345,15 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                   </button>
                 </div>
 
-                <TicketComments ticket={ticket} />
+                <TicketComments 
+                  ticket={ticket} 
+                  onCommentAdded={(comment) => {
+                    onUpdate({
+                      ...ticket,
+                      comments: [...(ticket.comments || []), comment]
+                    });
+                  }}
+                />
               </div>
             </div>
 
@@ -482,11 +491,12 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
           </div>
 
           {/* Rodapé */}
-          <div className="bg-gray-50 px-8 py-4 flex justify-end items-center border-t border-gray-200">
+          <div className="bg-gray-50 px-8 py-6 flex justify-end items-center border-t border-gray-200">
             <button
               onClick={onClose}
-              className="inline-flex items-center px-6 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+              className="inline-flex items-center px-6 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 hover:border-gray-400 transition-all duration-200"
             >
+              <X className="w-4 h-4 mr-2" />
               Fechar
             </button>
           </div>

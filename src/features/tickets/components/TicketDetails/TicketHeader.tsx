@@ -15,14 +15,15 @@ export function TicketHeader({ ticket, onClose, onDelete }: TicketHeaderProps) {
       <div className="flex space-x-2">
         <button
           onClick={onDelete}
-          className="text-red-600 hover:text-red-800 transition-colors duration-200"
+          className="text-red-600 hover:text-red-800 transition-colors duration-200 p-1 rounded-full hover:bg-red-50"
           title="Excluir ticket"
         >
           <Trash2 className="w-6 h-6" />
         </button>
         <button
           onClick={onClose}
-          className="text-gray-400 hover:text-gray-500"
+          className="text-gray-400 hover:text-gray-500 transition-colors duration-200 p-1 rounded-full hover:bg-gray-100"
+          title="Fechar detalhes"
         >
           <X className="w-6 h-6" />
         </button>

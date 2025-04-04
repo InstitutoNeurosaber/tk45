@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useSortable } from '@dnd-kit/sortable';
+import React from 'react';
+import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { AlertCircle, Clock, MessageSquare, Eye, Link, Mail } from 'lucide-react';
 import { priorityColors, priorityLabels } from '../types/ticket';
@@ -17,21 +17,19 @@ export function KanbanCard({ ticket, onClick, isDragging = false }: KanbanCardPr
     listeners,
     setNodeRef,
     transform,
-    transition,
-    isDragging: isSortableDragging
-  } = useSortable({
+    isDragging: isDraggingNow
+  } = useDraggable({
     id: ticket.id,
-    data: {
-      type: 'ticket',
-      ticket
-    }
+    data: ticket
   });
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isSortableDragging ? 0.5 : 1,
-    cursor: 'grab'
+    cursor: isDraggingNow ? 'grabbing' : 'grab',
+    zIndex: isDraggingNow ? 100 : 1,
+    opacity: isDragging ? 0.5 : 1,
+    position: 'relative' as const,
+    transition: 'box-shadow 200ms ease',
   };
 
   const isOverdue = (deadline?: Date) => {
@@ -61,13 +59,13 @@ export function KanbanCard({ ticket, onClick, isDragging = false }: KanbanCardPr
       className={`
         group
         bg-white rounded-lg p-4 shadow-sm
-        transition-all duration-200
+        transition-shadow duration-200
         hover:shadow-md
-        ${isSortableDragging ? 'shadow-lg ring-2 ring-primary ring-opacity-50 rotate-[-2deg]' : ''}
+        ${isDraggingNow ? 'shadow-md ring-1 ring-primary/30' : ''}
         ${isOverdue(ticket.deadline) ? 'border-l-4 border-red-500' : 'border border-gray-100'}
         relative
         select-none
-        ${isDragging ? 'opacity-50' : ''}
+        touch-none
         active:cursor-grabbing
       `}
     >
@@ -95,7 +93,13 @@ export function KanbanCard({ ticket, onClick, isDragging = false }: KanbanCardPr
       </button>
 
       {/* Conteúdo do card */}
-      <div onClick={() => onClick?.()} className="pr-8">
+      <div 
+        className="pr-8"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClick?.();
+        }}
+      >
         {/* Header com título e prioridade */}
         <div className="flex items-start justify-between">
           <h4 className="font-medium text-gray-900 line-clamp-2">{ticket.title}</h4>
@@ -137,15 +141,15 @@ export function KanbanCard({ ticket, onClick, isDragging = false }: KanbanCardPr
             </div>
 
             <div className="flex items-center space-x-2">
-              {ticket.comments?.length > 0 && (
+              {ticket.comments && ticket.comments.length > 0 && (
                 <div className="flex items-center text-blue-600">
-                  <MessageSquare className="w-4 w-4 mr-1" />
+                  <MessageSquare className="w-4 h-4 mr-1" />
                   <span>{ticket.comments.length}</span>
                 </div>
               )}
-              {ticket.attachments?.length > 0 && (
+              {ticket.attachments && ticket.attachments.length > 0 && (
                 <div className="flex items-center text-purple-600">
-                  <AlertCircle className="w-4 w-4 mr-1" />
+                  <AlertCircle className="w-4 h-4 mr-1" />
                   <span>{ticket.attachments.length}</span>
                 </div>
               )}
