@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
-    "postinstall": "cd netlify/functions && npm install"
+    "postinstall": "cd netlify/functions && npm install",
+    "netlify:build": "npm run build && cd netlify/functions && npm install"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",

@@ -1,4 +1,5 @@
 import { Handler } from '@netlify/functions';
+import axios from 'axios';
 import { ticketService } from '../../src/services/ticketService';
 import { clickupStatusReverseMap, clickupPriorityReverseMap } from '../../src/types/ticket';
 
@@ -6,12 +7,16 @@ export const handler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
-      body: JSON.stringify({ message: 'Método não permitido' })
+      body: JSON.stringify({ message: 'Method Not Allowed' })
     };
   }
 
   try {
     const payload = JSON.parse(event.body || '{}');
+    
+    // Aqui você pode adicionar sua lógica de processamento do webhook
+    console.log('Webhook recebido:', payload);
+
     const { event_type, task_id, history_items } = payload;
 
     // Buscar ticket pelo taskId
@@ -90,16 +95,14 @@ export const handler: Handler = async (event) => {
 
     return {
       statusCode: 200,
-      body: JSON.stringify({ success: true })
+      body: JSON.stringify({ message: 'Webhook processado com sucesso' })
     };
-
   } catch (error) {
-    console.error('Erro ao processar webhook do ClickUp:', error);
+    console.error('Erro ao processar webhook:', error);
+    
     return {
       statusCode: 500,
-      body: JSON.stringify({ 
-        message: error instanceof Error ? error.message : 'Erro interno do servidor'
-      })
+      body: JSON.stringify({ message: 'Erro interno do servidor' })
     };
   }
 };
