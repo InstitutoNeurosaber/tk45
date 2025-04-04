@@ -89,10 +89,36 @@ export const webhookService = {
 
   async sendWebhookNotification(event: WebhookEvent, data: unknown): Promise<WebhookResponse | undefined> {
     try {
+      console.log('[WebhookService] ⚠️⚠️⚠️ INICIANDO sendWebhookNotification:', event);
+      console.log('[WebhookService] Dados para envio:', JSON.stringify(data, null, 2).substring(0, 500) + '...');
+      
+      // Temporariamente, apenas log para diagnosticar se este método está sendo chamado
+      console.log('[WebhookService] ⚠️⚠️⚠️ MÉTODO SENDO EXECUTADO! ⚠️⚠️⚠️');
+      console.log('[WebhookService] Dados do window.location:', {
+        origin: window.location.origin,
+        hostname: window.location.hostname,
+        protocol: window.location.protocol,
+        port: window.location.port,
+        href: window.location.href
+      });
+      
       const webhooks = await this.getActiveWebhooks(event);
       
+      console.log('[WebhookService] Webhooks ativos encontrados:', webhooks.length);
+
       if (webhooks.length === 0) {
-        console.log('Nenhum webhook ativo para o evento:', event);
+        console.log('[WebhookService] ⚠️ Nenhum webhook ativo para o evento:', event);
+        // Mostrar status do db para debugar
+        try {
+          const webhooksRef = collection(db, 'webhooks_config');
+          const querySnapshot = await getDocs(webhooksRef);
+          console.log(`[WebhookService] Total de configurações de webhook: ${querySnapshot.size}`);
+          querySnapshot.forEach(doc => {
+            console.log(`[WebhookService] Webhook config: ${doc.id}`, doc.data());
+          });
+        } catch (dbError) {
+          console.error('[WebhookService] Erro ao consultar webhooks no banco:', dbError);
+        }
         return;
       }
 
@@ -152,11 +178,39 @@ export const webhookService = {
         timestamp: new Date().toISOString()
       };
 
+      // Verificar se estamos em ambiente de desenvolvimento - expandido para múltiplas portas
+      const isDevelopment = window.location.hostname === 'localhost' || 
+                            window.location.hostname === '127.0.0.1';
+      
+      console.log(`[Webhook] Ambiente de desenvolvimento: ${isDevelopment}; Origin: ${window.location.origin}`);
+
       // Enviar webhooks em paralelo
       const results = await Promise.allSettled(webhooks.map(async webhook => {
         try {
           // Usar sempre a URL principal do webhook
-          const url = webhook.url;
+          let url = webhook.url;
+          let useProxy = false;
+          
+          // Em ambiente de desenvolvimento, usar o proxy reverso no mesmo domínio
+          if (isDevelopment) {
+            // Se o webhook é para o endpoint com problema CORS
+            if (url.includes('webhook.sistemaneurosaber.com.br')) {
+              // Extrair a parte final do URL após "webhook/"
+              const urlParts = url.split('/webhook/');
+              if (urlParts.length > 1) {
+                const endpoint = urlParts[1]; // Ex: "comentario"
+                
+                // Usar o novo proxy reverso configurado no netlify.toml
+                url = `${window.location.origin}/api/webhook/${endpoint}`;
+                console.log(`[Webhook] Usando proxy reverso no mesmo domínio: ${url}`);
+              } else {
+                // Fallback para o proxy em produção
+                useProxy = true;
+                url = 'https://tickets.sistemaneurosaber.com.br/.netlify/functions/webhook-proxy';
+                console.log(`[Webhook] Redirecionando requisição para proxy em produção: ${url}`);
+              }
+            }
+          }
           
           // Adicionar headers necessários
           const headers = {
@@ -165,18 +219,26 @@ export const webhookService = {
             ...(webhook.headers || {})
           };
 
+          // Adicionar o URL original no payload quando usar o proxy
+          const proxyPayload = useProxy ? {
+            ...payload,
+            targetUrl: webhook.url  // Adicionar URL original para o proxy saber para onde encaminhar
+          } : payload;
+
+          console.log(`[Webhook] Enviando para ${useProxy ? 'proxy → ' + webhook.url : url}:`, JSON.stringify(proxyPayload, null, 2));
+
           // Fazer a requisição POST
           const response = await axiosInstance({
             method: 'POST',
             url,
             headers,
-            data: payload,
+            data: proxyPayload,
             validateStatus: (status) => {
               return status >= 200 && status < 300;
             }
           });
 
-          console.log(`Webhook enviado com sucesso para ${url}`, response.data);
+          console.log(`[Webhook] Enviado com sucesso para ${url}`, response.data);
 
           // Extrair dados da resposta
           const webhookResponse: WebhookResponse = {};
@@ -219,7 +281,7 @@ export const webhookService = {
 
           return { success: true, url, response: webhookResponse };
         } catch (error) {
-          console.error(`Erro ao enviar webhook para ${webhook.url}:`, error);
+          console.error(`[Webhook] Erro ao enviar webhook para ${webhook.url}:`, error);
           
           if (axios.isAxiosError(error)) {
             console.error('Detalhes do erro:', {
@@ -306,8 +368,8 @@ export const webhookService = {
       return undefined;
 
     } catch (error) {
-      console.error('Erro ao processar webhooks:', error);
-      throw new Error('Erro ao processar webhooks: ' + (error instanceof Error ? error.message : 'Erro desconhecido'));
+      console.error('[Webhook] Erro ao enviar webhooks:', error);
+      return undefined;
     }
   },
 

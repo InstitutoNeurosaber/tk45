@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Clock, 
@@ -21,6 +21,7 @@ import { useTicketStore } from '../stores/ticketStore';
 import { useAuthStore } from '../stores/authStore';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { TicketComments } from './TicketComments';
+import { CollaborativeComments } from './CollaborativeComments';
 import { statusLabels, priorityLabels, categoryLabels } from '../types/ticket';
 import type { Ticket, TicketStatus, TicketPriority } from '../types/ticket';
 
@@ -334,26 +335,21 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
 
               {/* Comentários */}
               <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-medium text-gray-900">Comentários</h3>
-                  <button
-                    onClick={handleViewComments}
-                    className="inline-flex items-center px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors"
-                  >
-                    <MessageSquare className="h-4 w-4 mr-2" />
-                    Ver Todos os Comentários
-                  </button>
-                </div>
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-4">Comentários</h3>
+                  </div>
 
-                <TicketComments 
-                  ticket={ticket} 
-                  onCommentAdded={(comment) => {
-                    onUpdate({
-                      ...ticket,
-                      comments: [...(ticket.comments || []), comment]
-                    });
-                  }}
-                />
+                  <TicketComments 
+                    ticket={ticket}
+                    onCommentAdded={(comment) => {
+                      onUpdate({
+                        ...ticket,
+                        comments: [...(ticket.comments || []), comment]
+                      });
+                    }}
+                  />
+                </div>
               </div>
             </div>
 

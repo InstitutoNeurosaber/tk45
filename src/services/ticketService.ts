@@ -199,12 +199,18 @@ export const ticketService = {
 
   async addComment(ticketId: string, commentData: Omit<Comment, 'id' | 'createdAt'>): Promise<Comment> {
     try {
+      console.log('[TicketService] Iniciando adição de comentário para ticket:', ticketId);
+      console.log('[TicketService] Dados do comentário:', commentData);
+      
       const ticketRef = doc(db, 'tickets', ticketId);
       const ticketDoc = await getDoc(ticketRef);
       
       if (!ticketDoc.exists()) {
+        console.error('[TicketService] Ticket não encontrado:', ticketId);
         throw new Error('Ticket não encontrado');
       }
+      
+      console.log('[TicketService] Ticket encontrado, criando comentário');
 
       const now = Timestamp.now();
       const commentId = crypto.randomUUID();
@@ -213,7 +219,10 @@ export const ticketService = {
         ...commentData,
         createdAt: now
       };
+      
+      console.log('[TicketService] Novo comentário criado com ID:', commentId);
 
+      console.log('[TicketService] Atualizando documento no Firestore');
       await updateDoc(ticketRef, {
         comments: arrayUnion({
           ...newComment,
@@ -221,35 +230,58 @@ export const ticketService = {
         }),
         updatedAt: now
       });
+      console.log('[TicketService] Documento atualizado com sucesso no Firestore');
 
       try {
+        console.log('[TicketService] Preparando para enviar webhook de comentário');
         const ticket = convertToTicket(ticketDoc);
-        const webhookResponse = await webhookService.sendWebhookNotification('ticket.comment_added', {
+        console.log('[TicketService] Dados do ticket:', ticket);
+        
+        // Exatamente a mesma estrutura usada para mudança de status
+        const webhookData = {
           ticketId,
+          status: 'commented', // Informação fictícia de status para manter o padrão
+          previousStatus: ticket.status, // Manter a estrutura idêntica à mudança de status
+          ticket, // O ticket completo
+          userId: commentData.userId,
+          userName: commentData.userName,
+          // Adicionar dados do comentário, mas manter estrutura principal como no status
           comment: {
             ...newComment,
             createdAt: now.toDate()
-          },
-          ticket
-        });
-
-        // Processar resposta do webhook se necessário
-        if (webhookResponse && webhookResponse.taskId && !ticket.taskId) {
-          await updateDoc(ticketRef, {
-            taskId: webhookResponse.taskId,
-            updatedAt: Timestamp.now()
-          });
+          }
+        };
+        console.log('[TicketService] Dados para webhook:', JSON.stringify(webhookData, null, 2));
+        
+        console.log('[TicketService] Chamando webhookService.sendWebhookNotification');
+        // Usar o mesmo evento que o de status para garantir compatibilidade
+        try {
+          const webhookResponse = await webhookService.sendWebhookNotification('ticket.status_changed', webhookData);
+          console.log('[TicketService] Resposta do webhook:', webhookResponse);
+        
+          // Processar resposta do webhook se necessário
+          if (webhookResponse && webhookResponse.taskId && !ticket.taskId) {
+            console.log('[TicketService] Atualizando ticket com taskId do webhook:', webhookResponse.taskId);
+            await updateDoc(ticketRef, {
+              taskId: webhookResponse.taskId,
+              updatedAt: Timestamp.now()
+            });
+            console.log('[TicketService] Ticket atualizado com taskId');
+          }
+        } catch (webhookSendError) {
+          console.error('[TicketService] Erro ao enviar webhook de comentário (capturado internamente):', webhookSendError);
         }
       } catch (error) {
-        console.error('Erro ao enviar webhook de comentário:', error);
+        console.error('[TicketService] Erro ao enviar webhook de comentário:', error);
       }
 
+      console.log('[TicketService] Retornando comentário criado');
       return {
         ...newComment,
         createdAt: now.toDate()
       };
     } catch (error) {
-      console.error('Erro ao adicionar comentário:', error);
+      console.error('[TicketService] Erro ao adicionar comentário:', error);
       throw new Error(error instanceof Error ? error.message : 'Erro ao adicionar comentário');
     }
   },

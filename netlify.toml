@@ -24,6 +24,22 @@
   status = 200
   force = true
 
+[[redirects]]
+  from = "/api/webhook-proxy"
+  to = "/.netlify/functions/webhook-proxy"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/webhook/*"
+  to = "https://webhook.sistemaneurosaber.com.br/webhook/:splat"
+  status = 200
+  force = true
+  [redirects.headers]
+    X-From-Netlify = "true"
+    Forward-Auth = "true"
+    Forward-Host = "true"
+
 [[headers]]
   for = "/.netlify/functions/*"
   [headers.values]

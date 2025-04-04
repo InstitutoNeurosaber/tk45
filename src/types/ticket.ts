@@ -17,6 +17,7 @@ export interface Comment {
   userName?: string;
   content: string;
   createdAt: Date;
+  status?: 'enviando' | 'enviado' | 'erro';
 }
 
 export interface Attachment {

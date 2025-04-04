@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Send, User, AlertCircle, Image as ImageIcon } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Send, User, AlertCircle, Image as ImageIcon, CheckCircle, Clock } from 'lucide-react';
 import { useCollaborativeComments } from '../hooks/useCollaborativeComments';
 import { useAuthStore } from '../stores/authStore';
 import { storage } from '../lib/firebase';
@@ -13,54 +13,182 @@ interface CollaborativeCommentsProps {
 }
 
 export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeCommentsProps) {
-  const { user, userData: currentUserData } = useAuthStore();
+  const { user, userData } = useAuthStore();
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [lastTypingUpdate, setLastTypingUpdate] = useState(0);
+  const [localMessages, setLocalMessages] = useState<Comment[]>([]);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastMessageRef = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const { 
     comments,
     activeUsers,
     error: chatError,
     isConnected,
-    addComment
+    addComment,
+    setTypingStatus,
+    typingUsers
   } = useCollaborativeComments(ticket.id);
 
+  // Combinar mensagens do servidor com mensagens locais ainda não confirmadas
+  const allComments = [...comments, ...localMessages.filter(
+    localMsg => !comments.some(serverMsg => serverMsg.id === localMsg.id)
+  )];
+
+  // Rolagem automática inteligente quando chegam novas mensagens
   useEffect(() => {
-    if (chatContainerRef.current) {
-      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
-    }
-  }, [comments]);
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
+    // Verificar se o usuário está próximo ao final do chat
+    const shouldScrollToBottom = () => {
+      if (!chatContainerRef.current) return false;
+      
+      const { scrollTop, scrollHeight, clientHeight } = chatContainerRef.current;
+      // Scroll para o final se estiver a menos de 100px do final ou se a última mensagem é do usuário atual
+      return scrollHeight - scrollTop - clientHeight < 100 || 
+        (allComments.length > 0 && allComments[allComments.length - 1].userId === user?.uid);
+    };
     
-    if (!newComment.trim() || isSubmitting || !user || !currentUserData) return;
-
-    if (!isConnected) {
-      console.error('Não é possível enviar mensagens sem conexão');
-      return;
+    if (shouldScrollToBottom() && lastMessageRef.current) {
+      lastMessageRef.current.scrollIntoView({ behavior: 'smooth' });
     }
+  }, [allComments, user?.uid]);
+
+  // Efeito para gerenciar o indicador de digitação
+  useEffect(() => {
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+    
+    if (isTyping) {
+      typingTimeoutRef.current = setTimeout(() => {
+        setIsTyping(false);
+        setTypingStatus?.(false);
+      }, 3000);
+    }
+    
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, [isTyping, setTypingStatus]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newComment.trim() || isSubmitting) return;
+
+    setIsSubmitting(true);
+    setError(null);
 
     try {
-      setIsSubmitting(true);
+      // Verificar se está conectado
+      if (!isConnected) {
+        console.warn('[Comments] Tentando enviar comentário enquanto offline');
+      }
 
-      const comment = await addComment({
-        content: newComment.trim(),
-        userId: user.uid,
-        userName: currentUserData.name,
-        ticketId: ticket.id,
-        createdAt: new Date()
-      });
-
-      onCommentAdded?.(comment);
+      console.log('[Comments] Enviando novo comentário:', newComment);
+      
+      // Criar o comentário com todos os dados necessários
+      const now = new Date();
+      const comment = {
+        content: newComment,
+        userId: user?.uid || 'anônimo',
+        userName: userData?.name || user?.displayName || 'Anônimo',
+        createdAt: now,
+        ticketId: ticket.id
+      };
+      
+      console.log('[Comments] Estrutura de dados do comentário:', comment);
+      
+      // Salvar o comentário usando o hook colaborativo
+      console.log('[Comments] Chamando addComment via hook...');
+      const savedComment = await addComment(comment);
+      console.log('[Comments] Comentário salvo com sucesso via hook:', savedComment);
+      
+      // Notificar o componente pai sobre o novo comentário se a callback existir
+      if (onCommentAdded) {
+        console.log('[Comments] Chamando callback onCommentAdded');
+        onCommentAdded(savedComment);
+        console.log('[Comments] Callback onCommentAdded executada');
+      } else {
+        console.log('[Comments] Sem callback onCommentAdded configurada');
+      }
+      
+      // Limpar o estado do comentário e estado de submissão
       setNewComment('');
+      setIsSubmitting(false);
+      
+      // Log extra para confirmar o envio do webhook
+      console.log('[Comments] Comentário adicionado e webhook será enviado diretamente via fetch');
+      
+      // Envio direto do webhook via fetch (método confirmado como funcional)
+      try {
+        console.log('[Comments] Enviando webhook diretamente via fetch');
+        
+        // Preparar payload simplificado
+        const webhookPayload = {
+          targetUrl: 'https://webhook.sistemaneurosaber.com.br/webhook/comentario',
+          event: 'ticket.comment_added',
+          data: {
+            ticketId: ticket.id,
+            comment: {
+              id: savedComment.id,
+              content: savedComment.content,
+              userId: savedComment.userId,
+              userName: savedComment.userName,
+              createdAt: new Date().toISOString()
+            },
+            ticket: {
+              id: ticket.id,
+              title: ticket.title
+            }
+          }
+        };
+        
+        console.log('[Comments] Payload do webhook:', JSON.stringify(webhookPayload, null, 2));
+        
+        // Enviar diretamente para o proxy em produção
+        const response = await fetch('https://tickets.sistemaneurosaber.com.br/.netlify/functions/webhook-proxy', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(webhookPayload)
+        });
+        
+        console.log('[Comments] Envio direto de webhook - status:', response.status);
+        
+        if (!response.ok) {
+          console.error('[Comments] Erro ao enviar webhook:', response.status, response.statusText);
+          const text = await response.text();
+          console.log('[Comments] Resposta de erro completa:', text);
+        } else {
+          try {
+            const result = await response.json();
+            console.log('[Comments] Webhook enviado com sucesso - resposta:', result);
+          } catch (jsonError) {
+            console.error('[Comments] Erro ao processar resposta JSON:', jsonError);
+            const text = await response.text();
+            console.log('[Comments] Resposta texto puro:', text);
+          }
+        }
+      } catch (webhookError) {
+        console.error('[Comments] Erro ao enviar webhook diretamente:', webhookError);
+      }
+      
     } catch (error) {
-      console.error('Erro ao enviar comentário:', error);
-    } finally {
+      console.error('[Comments] Erro ao enviar comentário:', error);
+      
+      setError(error instanceof Error 
+        ? error.message 
+        : 'Não foi possível enviar o comentário. Tente novamente.');
+      
       setIsSubmitting(false);
     }
   };
@@ -69,6 +197,18 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       formRef.current?.requestSubmit();
+    }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setNewComment(e.target.value);
+    
+    // Atualizar status de digitação com throttling
+    const now = Date.now();
+    if (!isTyping || now - lastTypingUpdate > 2000) {
+      setIsTyping(true);
+      setLastTypingUpdate(now);
+      setTypingStatus?.(true);
     }
   };
 
@@ -116,7 +256,7 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
   };
 
   const handleFiles = async (files: File[]) => {
-    if (!user || !currentUserData || !isConnected) return;
+    if (!user || !userData || !isConnected) return;
 
     try {
       setIsSubmitting(true);
@@ -127,24 +267,78 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
           continue;
         }
 
-        const fileId = uuidv4();
-        const fileRef = ref(storage, `comments/${ticket.id}/${fileId}-${file.name}`);
-        
-        await uploadBytes(fileRef, file);
-        const imageUrl = await getDownloadURL(fileRef);
-        
-        const comment = await addComment({
-          content: `![${file.name}](${imageUrl})`,
+        // Criar mensagem temporária local
+        const tempId = uuidv4();
+        const tempComment: Comment = {
+          id: tempId,
+          content: `Enviando imagem...`,
           userId: user.uid,
-          userName: currentUserData.name,
+          userName: userData.name,
           ticketId: ticket.id,
-          createdAt: new Date()
-        });
+          createdAt: new Date(),
+          status: 'enviando'
+        } as Comment;
 
-        onCommentAdded?.(comment);
+        // Adicionar mensagem local enquanto aguarda upload
+        setLocalMessages(prev => [...prev, tempComment]);
+
+        try {
+          const fileId = uuidv4();
+          const fileRef = ref(storage, `comments/${ticket.id}/${fileId}-${file.name}`);
+          
+          await uploadBytes(fileRef, file);
+          const imageUrl = await getDownloadURL(fileRef);
+          
+          // Remover mensagem temporária
+          setLocalMessages(prev => prev.filter(msg => msg.id !== tempId));
+          
+          try {
+            // Adicionar comentário com a imagem ao sistema colaborativo
+            const comment = await addComment({
+              content: `![${file.name}](${imageUrl})`,
+              userId: user.uid,
+              userName: userData.name,
+              ticketId: ticket.id,
+              createdAt: new Date()
+            });
+
+            // Chamar onCommentAdded para garantir que o comentário seja atualizado no ticket
+            if (onCommentAdded) {
+              console.log('Chamando onCommentAdded callback para imagem no ticket pai');
+              onCommentAdded(comment);
+            }
+          } catch (commentError) {
+            console.error('Erro ao adicionar imagem ao sistema colaborativo:', commentError);
+            
+            // Se falhar, tenta adicionar diretamente via callback
+            if (onCommentAdded) {
+              try {
+                console.log('Tentando adicionar imagem diretamente via callback');
+                const directComment: Comment = {
+                  id: crypto.randomUUID(),
+                  content: `![${file.name}](${imageUrl})`,
+                  userId: user.uid,
+                  userName: userData.name,
+                  ticketId: ticket.id,
+                  createdAt: new Date()
+                };
+                onCommentAdded(directComment);
+              } catch (fallbackError) {
+                console.error('Erro ao adicionar imagem via fallback:', fallbackError);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('Erro ao enviar imagem:', error);
+          
+          // Marcar mensagem temporária como falha
+          setLocalMessages(prev => prev.map(msg => 
+            msg.id === tempId ? { ...msg, content: 'Falha ao enviar imagem', status: 'erro' } : msg
+          ));
+        }
       }
     } catch (error) {
-      console.error('Erro ao enviar imagem:', error);
+      console.error('Erro ao processar imagens:', error);
     } finally {
       setIsSubmitting(false);
     }
@@ -158,17 +352,29 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
   };
 
   const formatDate = (date: Date) => {
-    return new Date(date).toLocaleDateString('pt-BR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    const messageDate = new Date(date);
+    
+    if (messageDate.toDateString() === today.toDateString()) {
+      return 'Hoje';
+    } else if (messageDate.toDateString() === yesterday.toDateString()) {
+      return 'Ontem';
+    } else {
+      return messageDate.toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric'
+      });
+    }
   };
 
   const groupCommentsByDate = () => {
     const groups: Record<string, Comment[]> = {};
     
-    comments.forEach(comment => {
+    allComments.forEach(comment => {
       const date = formatDate(comment.createdAt);
       if (!groups[date]) {
         groups[date] = [];
@@ -179,8 +385,18 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
     return groups;
   };
 
-  const isCurrentUser = (userId: string) => {
+  const isCurrentUser = (userId: string): boolean => {
     return user?.uid === userId;
+  };
+
+  const renderMessageStatus = (comment: Comment) => {
+    if (comment.status === 'enviando') {
+      return <Clock className="h-3 w-3 text-gray-400" />;
+    } else if (comment.status === 'erro') {
+      return <AlertCircle className="h-3 w-3 text-red-500" />;
+    } else {
+      return <CheckCircle className="h-3 w-3 text-blue-400" />;
+    }
   };
 
   const renderCommentContent = (content: string) => {
@@ -198,6 +414,38 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
       );
     }
     return content;
+  };
+
+  // Renderiza quem está digitando
+  const renderTypingIndicator = () => {
+    const typing = Array.from(typingUsers || []).filter(id => id !== user?.uid);
+    
+    if (typing.length === 0) return null;
+    
+    const typingUserNames = typing.map(userId => {
+      const activeUser = activeUsers.find(u => u.user.id === userId);
+      return activeUser?.user.name || 'Alguém';
+    });
+    
+    let typingText = '';
+    if (typingUserNames.length === 1) {
+      typingText = `${typingUserNames[0]} está digitando...`;
+    } else if (typingUserNames.length === 2) {
+      typingText = `${typingUserNames[0]} e ${typingUserNames[1]} estão digitando...`;
+    } else {
+      typingText = 'Várias pessoas estão digitando...';
+    }
+    
+    return (
+      <div className="flex items-center text-xs text-gray-500 animate-pulse px-4">
+        <div className="flex space-x-1">
+          <span className="animate-bounce">•</span>
+          <span className="animate-bounce delay-75">•</span>
+          <span className="animate-bounce delay-150">•</span>
+        </div>
+        <span className="ml-2">{typingText}</span>
+      </div>
+    );
   };
 
   return (
@@ -229,7 +477,7 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
       <div 
         ref={chatContainerRef}
         className={`flex-1 overflow-y-auto space-y-4 pr-2 ${isDragging ? 'bg-blue-50 border-2 border-dashed border-blue-300 rounded-lg' : ''}`}
-        style={{ maxHeight: 'calc(100vh - 400px)' }}
+        style={{ maxHeight: 'calc(100vh - 400px)', minHeight: '300px' }}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -242,14 +490,18 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
               </span>
             </div>
 
-            {dateComments.map((comment) => {
+            {dateComments.map((comment, index) => {
               const isOwn = isCurrentUser(comment.userId);
+              const isLastMessage = index === dateComments.length - 1 && 
+                date === Object.keys(groupCommentsByDate())[Object.keys(groupCommentsByDate()).length - 1];
+              
               return (
                 <div
                   key={comment.id}
                   className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}
+                  ref={isLastMessage ? lastMessageRef : null}
                 >
-                  <div className={`flex items-end space-x-2 max-w-[80%] ${isOwn ? 'flex-row-reverse space-x-reverse' : ''}`}>
+                  <div className={`flex items-end space-x-2 max-w-[85%] ${isOwn ? 'flex-row-reverse space-x-reverse' : ''}`}>
                     {!isOwn && (
                       <div 
                         className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-white"
@@ -267,19 +519,24 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
                           {comment.userName || 'Usuário'}
                         </span>
                       )}
-                      <div className={`rounded-2xl px-4 py-2 max-w-full break-words ${
+                      <div className={`rounded-3xl px-4 py-2 max-w-full break-words shadow-sm ${
                         isOwn
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-100 text-gray-900'
+                          ? 'bg-blue-600 text-white rounded-tr-none'
+                          : 'bg-gray-100 text-gray-900 rounded-tl-none'
                       }`}>
                         <div className="text-sm whitespace-pre-wrap">
                           {renderCommentContent(comment.content)}
                         </div>
-                        <span className={`text-xs ${
+                        <div className={`flex items-center justify-end space-x-1 mt-1 ${
                           isOwn ? 'text-blue-100' : 'text-gray-500'
-                        } block text-right mt-1`}>
-                          {formatTime(comment.createdAt)}
-                        </span>
+                        }`}>
+                          <span className="text-xs">{formatTime(comment.createdAt)}</span>
+                          {isOwn && (
+                            <span className="flex-shrink-0">
+                              {renderMessageStatus(comment)}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -289,13 +546,15 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
           </div>
         ))}
 
-        {comments.length === 0 && (
+        {allComments.length === 0 && (
           <div className="flex items-center justify-center h-full">
             <p className="text-gray-500 text-sm">
               Nenhum comentário ainda. Seja o primeiro a comentar!
             </p>
           </div>
         )}
+        
+        {renderTypingIndicator()}
       </div>
 
       {/* Usuários Ativos */}
@@ -303,11 +562,11 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
         <div className="px-4 py-2 bg-gray-50 border-t border-gray-200">
           <div className="flex items-center space-x-2">
             <span className="text-sm text-gray-500">Online:</span>
-            <div className="flex -space-x-2">
+            <div className="flex -space-x-2 overflow-hidden">
               {activeUsers.map(({ user }) => (
                 <div
                   key={user.id}
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-xs text-white"
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-xs text-white ring-2 ring-white"
                   style={{ backgroundColor: user.color }}
                   title={user.name}
                 >
@@ -327,11 +586,11 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
               <input
                 type="text"
                 value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
+                onChange={handleInputChange}
                 onKeyPress={handleKeyPress}
                 onPaste={handlePaste}
                 placeholder="Digite sua mensagem ou arraste uma imagem..."
-                className="w-full rounded-full border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm pr-12"
+                className="w-full rounded-full border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm pr-12 py-3"
                 disabled={isSubmitting || !isConnected}
               />
               <input
@@ -341,12 +600,14 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
                 accept="image/*"
                 className="hidden"
                 multiple
+                aria-label="Selecionar imagens para envio"
               />
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
                 disabled={!isConnected}
+                aria-label="Anexar imagem"
               >
                 <ImageIcon className="h-5 w-5" />
               </button>
@@ -355,6 +616,7 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
               type="submit"
               disabled={!newComment.trim() || isSubmitting || !isConnected}
               className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-colors"
+              aria-label="Enviar mensagem"
             >
               <Send className={`h-5 w-5 text-white ${isSubmitting ? 'opacity-50' : ''}`} />
             </button>

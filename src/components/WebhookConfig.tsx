@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Webhook, Clock as ClickUp, Code, TestTube } from 'lucide-react';
+import { Webhook, Clock as ClickUp, Code, TestTube, Plus } from 'lucide-react';
 import { useWebhookStore } from '../stores/webhookStore';
 import { useAuthStore } from '../stores/authStore';
-import { WebhookForm } from './WebhookForm';
+import { WebhookFormModal } from './WebhookFormModal';
 import { WebhookList } from './WebhookList';
 import { WebhookTest } from './WebhookTest';
 import { ClickUpConfig } from './ClickUpConfig';
@@ -14,6 +14,7 @@ import type { WebhookConfig as WebhookConfigType } from '../types/webhook';
 export function WebhookConfig() {
   const [activeTab, setActiveTab] = React.useState<'webhooks' | 'clickup' | 'api' | 'n8n' | 'test'>('webhooks');
   const [editingWebhook, setEditingWebhook] = useState<WebhookConfigType | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const { user } = useAuthStore();
   const { fetchWebhooks } = useWebhookStore();
 
@@ -44,7 +45,17 @@ export function WebhookConfig() {
 
   const handleEdit = (webhook: WebhookConfigType) => {
     setEditingWebhook(webhook);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setEditingWebhook(null);
+  };
+
+  const handleOpenCreateModal = () => {
+    setEditingWebhook(null);
+    setIsModalOpen(true);
   };
 
   return (
@@ -111,16 +122,27 @@ export function WebhookConfig() {
 
       {activeTab === 'webhooks' ? (
         <>
-          <WebhookForm 
-            webhook={editingWebhook}
-            onWebhookCreated={handleWebhookCreated}
-            onWebhookUpdated={handleWebhookUpdated}
-            onCancel={editingWebhook ? () => setEditingWebhook(null) : undefined}
-          />
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-900">Webhooks</h2>
+            <button
+              onClick={handleOpenCreateModal}
+              className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Novo Webhook
+            </button>
+          </div>
           <WebhookTest />
           <WebhookList 
             onWebhookDeleted={handleWebhookDeleted}
             onEdit={handleEdit}
+          />
+          <WebhookFormModal
+            isOpen={isModalOpen}
+            onClose={handleCloseModal}
+            webhook={editingWebhook || undefined}
+            onWebhookCreated={handleWebhookCreated}
+            onWebhookUpdated={handleWebhookUpdated}
           />
         </>
       ) : activeTab === 'clickup' ? (
