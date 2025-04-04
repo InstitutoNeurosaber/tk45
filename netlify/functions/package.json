@@ -5,6 +5,7 @@
   "dependencies": {
     "@netlify/functions": "^2.6.0",
     "axios": "^1.6.8",
-    "firebase-admin": "^12.0.0"
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^4.3.0"
   }
 } 

@@ -18,12 +18,18 @@
   status = 200
   force = true
 
+[[redirects]]
+  from = "/api/webhooks"
+  to = "/.netlify/functions/list-webhooks"
+  status = 200
+  force = true
+
 [[headers]]
   for = "/.netlify/functions/*"
   [headers.values]
     Access-Control-Allow-Origin = "*"
     Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
-    Access-Control-Allow-Headers = "X-API-Key, Content-Type, Accept, X-Requested-With"
+    Access-Control-Allow-Headers = "X-API-Key, Content-Type, Accept, X-Requested-With, Authorization"
     Cache-Control = "no-cache"
 
 [build.environment]
