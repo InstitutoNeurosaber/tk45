@@ -6,6 +6,7 @@ import { db } from '../lib/firebase';
 import { ticketService } from '../services/ticketService';
 import type { Ticket, TicketStatus, TicketPriority, Comment } from '../types/ticket';
 import { clickupStatusSync } from '../services/clickup/statusSync';
+import { syncService, taskService } from '../services/clickup';
 
 interface TicketState {
   tickets: Ticket[];
@@ -116,7 +117,6 @@ export const useTicketStore = create<TicketState>((set, get) => ({
     try {
       set({ loading: true, error: null });
       
-      // Obter o ticket atual
       const currentTicket = get().tickets.find(t => t.id === ticketId);
       if (!currentTicket) {
         throw new Error('Ticket não encontrado');
@@ -127,12 +127,12 @@ export const useTicketStore = create<TicketState>((set, get) => ({
       
       // Sincronizar com ClickUp se configurado
       try {
-        await clickupService.isConfigured().then(async (isConfigured) => {
+        await taskService.isConfigured().then(async (isConfigured) => {
           if (isConfigured) {
             console.log("ClickUp configurado, sincronizando atualização de ticket");
             // Mesclar o ticket atual com as alterações para sincronização
             const mergedTicket = { ...currentTicket, ...updatedTicket };
-            const taskId = await clickupService.syncTicketWithClickUp(mergedTicket);
+            const taskId = await syncService.syncTicketWithClickUp(mergedTicket);
             
             // Se o taskId mudou, atualizar no ticket
             if (taskId && taskId !== currentTicket.taskId) {
@@ -200,10 +200,10 @@ export const useTicketStore = create<TicketState>((set, get) => ({
       // Deletar no ClickUp se configurado e se tiver taskId
       if (ticketToDelete.taskId) {
         try {
-          await clickupService.isConfigured().then(async (isConfigured) => {
+          await taskService.isConfigured().then(async (isConfigured) => {
             if (isConfigured) {
               console.log("ClickUp configurado, deletando tarefa");
-              await clickupService.deleteTask(ticketToDelete);
+              await syncService.deleteTask(ticketToDelete);
             }
           });
         } catch (syncError) {
@@ -251,12 +251,12 @@ export const useTicketStore = create<TicketState>((set, get) => ({
       if (ticket?.taskId) {
         try {
           console.log(`[TicketStore] Ticket ${ticketId} tem taskId ${ticket.taskId}, verificando integração ClickUp`);
-          await clickupService.isConfigured().then(async (isConfigured) => {
+          await taskService.isConfigured().then(async (isConfigured) => {
             if (isConfigured) {
               console.log(`[TicketStore] ClickUp configurado, adicionando comentário à tarefa ${ticket.taskId}`);
               // Garantir que taskId não é undefined
               const clickupTaskId = ticket.taskId as string;
-              await clickupService.addComment(clickupTaskId, newComment);
+              await syncService.syncComment(ticketId, clickupTaskId, newComment.content);
             } else {
               console.log('[TicketStore] ClickUp não está configurado, pulando sincronização de comentário');
             }
@@ -304,7 +304,7 @@ export const useTicketStore = create<TicketState>((set, get) => ({
       // Sincronizar exclusão do comentário com o ClickUp se aplicável
       if (ticket?.taskId && commentToDelete) {
         try {
-          await clickupService.isConfigured().then(async (isConfigured) => {
+          await taskService.isConfigured().then(async (isConfigured) => {
             if (isConfigured) {
               console.log("ClickUp configurado, notificando exclusão de comentário");
               // Como o ClickUp não permite excluir comentários via API, 
@@ -317,8 +317,7 @@ export const useTicketStore = create<TicketState>((set, get) => ({
                 ticketId: ticketId,
                 createdAt: new Date()
               };
-              
-              await clickupService.addComment(ticket.taskId as string, deletionNotice);
+              await syncService.syncComment(ticketId, ticket.taskId as string, deletionNotice.content);
             }
           });
         } catch (syncError) {
@@ -348,83 +347,73 @@ export const useTicketStore = create<TicketState>((set, get) => ({
 
   syncWithClickUp: async (ticket: Ticket) => {
     try {
+      set({ loading: true, error: null });
+      
       console.log("Iniciando sincronização manual com ClickUp para o ticket:", ticket.id);
       
       // Verificar se o ClickUp está configurado
-      const isConfigured = await clickupService.isConfigured();
+      const isConfigured = await taskService.isConfigured();
       if (!isConfigured) {
         console.log("ClickUp não configurado, pulando sincronização manual");
         throw new Error("ClickUp não está configurado. Configure a integração primeiro.");
       }
-
-      // É esperado o erro 404 se a tarefa não existir no ClickUp, 
-      // já que estamos tentando buscar uma tarefa pelo ID do ticket
-      console.log("Tentando sincronizar o ticket com o ClickUp (criação ou atualização)...");
       
-      // Se o ticket já tem um taskId, vamos verificar se ele existe realmente
+      // É esperado o erro 404 se a tarefa não existir no ClickUp,
+      // nesse caso, criamos uma nova tarefa
+      console.log("Tentando sincronizar o ticket com o ClickUp (criação ou atualização)...");
+      let taskExists = false;
+      
       if (ticket.taskId) {
         console.log(`Ticket já possui um taskId: ${ticket.taskId}, verificando se existe no ClickUp...`);
+        
         try {
-          // Não podemos acessar diretamente o método getConfig, 
-          // mas podemos obter uma instância da API via isConfigured
-          const api = await clickupService.isConfigured()
-            .then(() => new ClickUpAPI((clickupService as any)._apiKey || "")); // Usar qualquer técnica disponível
-          
-          const taskExists = await api.taskExists(ticket.taskId);
+          // Verificar se a tarefa ainda existe no ClickUp
+          taskExists = await taskService.taskExists(ticket.taskId);
           
           if (!taskExists) {
             console.log(`A tarefa ${ticket.taskId} não existe mais no ClickUp. Criando nova tarefa...`);
-            // Limpar o taskId para que uma nova tarefa seja criada
-            ticket = { ...ticket, taskId: undefined };
+            // Continua para criar uma nova tarefa
           } else {
             console.log(`A tarefa ${ticket.taskId} existe no ClickUp. Atualizando...`);
+            // Tarefa existe, então podemos pular a criação
           }
         } catch (error) {
           console.error("Erro ao verificar existência da tarefa:", error);
-          // Se o erro for 404, continuamos para criar uma nova tarefa
-          console.log("Considerando que a tarefa não existe e criando uma nova...");
-          ticket = { ...ticket, taskId: undefined };
+          // Continua para criar uma nova tarefa
         }
       } else {
         console.log("Ticket não possui taskId, criando nova tarefa no ClickUp...");
       }
-
-      // Tentar sincronizar com o ClickUp (isso tentará criar ou atualizar)
-      const taskId = await clickupService.syncTicketWithClickUp(ticket);
-      console.log(`Resultado da sincronização: taskId = ${taskId}`);
       
-      if (taskId && taskId !== ticket.taskId) {
-        // Atualizar o ticket com o novo taskId
-        console.log(`Novo taskId recebido: ${taskId}, atualizando ticket...`);
-        const updatedTicket = {
-          ...ticket,
-          taskId
-        };
+      // Tentar sincronizar com o ClickUp (isso tentará criar ou atualizar)
+      const taskId = await syncService.syncTicketWithClickUp(ticket);
+      
+      // Se tivemos um resultado de sincronização bem-sucedido,
+      // e o taskId é diferente do atual, atualizar o ticket:
+      if (taskId && (!ticket.taskId || ticket.taskId !== taskId)) {
+        console.log(`Recebido novo taskId: ${taskId}. Atualizando o ticket...`);
         
-        // Atualizar no backend
-        console.log("Salvando novo taskId no banco de dados...");
         await ticketService.updateTicket(ticket.id, { taskId });
         
-        // Atualizar no estado local
-        console.log("Atualizando estado local com novo taskId...");
+        // Atualizar também no estado local:
         set(state => ({
           tickets: state.tickets.map(t => 
-            t.id === ticket.id ? { ...t, taskId } : t
+            t.id === ticket.id 
+              ? { ...t, taskId } 
+              : t
           )
         }));
-        
-        console.log("Sincronização concluída com sucesso!");
-        return updatedTicket;
       } else if (!taskId) {
         console.error("Não foi possível obter um taskId válido do ClickUp");
         throw new Error("Não foi possível criar a tarefa no ClickUp. Verifique a configuração e os logs.");
       }
       
-      console.log("Nenhuma mudança no taskId, mantendo ticket como está");
-      return ticket;
+      set({ loading: false });
+      return {...ticket, taskId};
     } catch (error) {
+      set({ loading: false, error: error instanceof Error ? error.message : 'Erro desconhecido' });
       console.error("Erro na sincronização manual com ClickUp:", error);
-      throw error; // Propagar o erro para que a UI possa mostrar a mensagem
+      throw error;
     }
   }
 }));

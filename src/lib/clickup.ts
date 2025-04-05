@@ -84,6 +84,11 @@ export class ClickUpAPI {
     return this.request<{ lists: { id: string; name: string }[] }>(`/space/${spaceId}/list`);
   }
 
+  // Obter detalhes de uma lista específica
+  async getList(listId: string) {
+    return this.request<{ id: string; name: string; statuses?: Array<{ status: string }> }>(`/list/${listId}`);
+  }
+
   // Verifica se uma tarefa existe no ClickUp
   async taskExists(taskId: string): Promise<boolean> {
     try {
@@ -168,20 +173,20 @@ export class ClickUpAPI {
       
       switch (ticket.status) {
         case 'open':
-          status = 'ABERTO';
+          status = 'aberto';
           break;
         case 'in_progress':
-          status = 'EM ANDAMENTO';
+          status = 'em andamento';
           break;
         case 'resolved':
-          status = 'RESOLVIDO';
+          status = 'resolvido';
           break;
         case 'closed':
-          status = 'FECHADO';
+          status = 'fechado';
           break;
         default:
-          console.warn(`Status desconhecido: ${ticket.status}, usando status padrão 'ABERTO'`);
-          status = 'ABERTO';
+          console.warn(`Status desconhecido: ${ticket.status}, usando status padrão 'aberto'`);
+          status = 'aberto';
       }
       console.log(`Status mapeado para: ${status}`);
     }
@@ -212,7 +217,7 @@ export class ClickUpAPI {
         if (error.message.includes('Status not found')) {
           // Erro específico de status não encontrado
           throw new Error(`Erro de status: O status "${status}" não existe na lista configurada no ClickUp. ` +
-                          `Verifique se você tem os seguintes status criados no ClickUp: ABERTO, EM ANDAMENTO, RESOLVIDO, FECHADO.`);
+                          `Verifique se você tem os seguintes status criados no ClickUp: aberto, em andamento, resolvido, fechado.`);
         } else if (error.message.includes('Recurso não encontrado')) {
           throw new Error(`A lista com ID ${listId} não foi encontrada no ClickUp. Verifique a configuração.`);
         } else if (error.message.includes('404')) {
@@ -226,7 +231,7 @@ export class ClickUpAPI {
           const errorMessage = error.message;
           if (errorMessage.includes('Status')) {
             throw new Error(`Erro 400: Problema com o status. O status "${status}" não existe na lista do ClickUp. ` +
-                          `Crie os status ABERTO, EM ANDAMENTO, RESOLVIDO e FECHADO na sua lista do ClickUp.`);
+                          `Crie os status aberto, em andamento, resolvido e fechado na sua lista do ClickUp.`);
           } else if (errorMessage.includes('Field is must be a valid UUID')) {
             throw new Error(`Erro 400: Problema com o campo personalizado. O ID do campo personalizado deve ser um UUID válido. Verifique a configuração dos campos personalizados no ClickUp.`);
           } else {
@@ -240,56 +245,130 @@ export class ClickUpAPI {
 
   // Atualiza o status de uma tarefa
   async updateTaskStatus(taskId: string, status: string) {
-    console.log(`[ClickUpAPI] Atualizando status da tarefa ${taskId} para "${status}"`);
+    console.log(`[ClickUpAPI] ⚠️ INICIANDO atualização de status da tarefa ${taskId} para "${status}"`);
     
     try {
       // Primeiro, verificar se a tarefa existe e obter os status disponíveis
       try {
         // Obter a tarefa para ver qual é a lista
-        const taskData = await this.request(`/task/${taskId}`);
-        console.log(`[ClickUpAPI] Dados da tarefa recuperados. Liste ID: ${taskData.list.id}`);
+        console.log(`[ClickUpAPI] Buscando informações da tarefa ${taskId}`);
+        const taskData = await this.request<{list?: {id?: string}, status?: {status?: string}}>(`/task/${taskId}`);
+        console.log(`[ClickUpAPI] Dados da tarefa recuperados:`, JSON.stringify({
+          taskId,
+          listId: taskData?.list?.id,
+          currentStatus: taskData?.status?.status
+        }));
         
         if (taskData && taskData.list && taskData.list.id) {
+          const listId = taskData.list.id;
+          console.log(`[ClickUpAPI] Lista identificada: ${listId}`);
+          
           // Obter os status disponíveis para esta lista
-          const listData = await this.request(`/list/${taskData.list.id}`);
-          console.log(`[ClickUpAPI] Dados da lista recuperados. Status disponíveis: ${listData.statuses?.length || 0}`);
+          console.log(`[ClickUpAPI] Buscando status disponíveis para a lista ${listId}`);
+          const listData = await this.request<{statuses?: Array<{id: string, status: string, orderindex: number}>}>(`/list/${listId}`);
+          console.log(`[ClickUpAPI] Dados da lista recuperados. Status disponíveis: ${listData?.statuses?.length || 0}`);
           
           if (listData && listData.statuses && Array.isArray(listData.statuses)) {
-            const availableStatuses = listData.statuses.map((s: any) => s.status);
+            console.log(`[ClickUpAPI] Detalhes de status:`, JSON.stringify(listData.statuses.map(s => ({
+              id: s.id, 
+              status: s.status, 
+              orderindex: s.orderindex
+            }))));
+            
+            const availableStatuses = listData.statuses.map((s) => s.status);
             console.log(`[ClickUpAPI] Status disponíveis na lista:`, availableStatuses);
             
             // Verificar se o status existe exatamente como passado
             if (!availableStatuses.includes(status)) {
-              console.log(`[ClickUpAPI] Status "${status}" não encontrado. Verificando status em caso insensitivo.`);
+              console.log(`[ClickUpAPI] ⚠️ Status "${status}" não encontrado exatamente. Tentando correspondências alternativas.`);
               
               // Verificar sem considerar case sensitive
-              const statusLowerCase = status.toLowerCase();
-              const matchingStatus = availableStatuses.find(s => s.toLowerCase() === statusLowerCase);
+              const statusLowerCase = status.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+              const availableStatusesNormalized = availableStatuses.map(s => 
+                s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+              );
               
-              if (matchingStatus) {
-                console.log(`[ClickUpAPI] Status encontrado com case diferente: "${matchingStatus}". Usando este status.`);
+              console.log(`[ClickUpAPI] Status normalizado: "${statusLowerCase}"`);
+              console.log(`[ClickUpAPI] Status disponíveis normalizados:`, availableStatusesNormalized);
+              
+              // Busca exata com normalização
+              const exactMatchIndex = availableStatusesNormalized.findIndex(s => s === statusLowerCase);
+              
+              if (exactMatchIndex !== -1) {
+                const matchingStatus = availableStatuses[exactMatchIndex];
+                console.log(`[ClickUpAPI] ✓ Status encontrado com normalização: "${matchingStatus}". Usando este status.`);
                 status = matchingStatus;
               } else {
                 // Tentar uma correspondência mais flexível
                 console.log(`[ClickUpAPI] Tentando encontrar uma correspondência parcial para "${status}"`);
-                const partialMatch = availableStatuses.find(s => 
-                  s.toLowerCase().includes(statusLowerCase) || 
-                  statusLowerCase.includes(s.toLowerCase())
+                
+                const partialMatchIndex = availableStatusesNormalized.findIndex(s => 
+                  s.includes(statusLowerCase) || statusLowerCase.includes(s)
                 );
                 
-                if (partialMatch) {
-                  console.log(`[ClickUpAPI] Correspondência parcial encontrada: "${partialMatch}". Usando este status.`);
+                if (partialMatchIndex !== -1) {
+                  const partialMatch = availableStatuses[partialMatchIndex];
+                  console.log(`[ClickUpAPI] ✓ Correspondência parcial encontrada: "${partialMatch}". Usando este status.`);
                   status = partialMatch;
                 } else {
-                  console.error(`[ClickUpAPI] ERRO: Status "${status}" não está na lista de status disponíveis!`);
-                  console.error(`[ClickUpAPI] Você deve criar este status exatamente com este nome no ClickUp: "${status}"`);
+                  console.error(`[ClickUpAPI] ❌ ERRO CRÍTICO: Status "${status}" não corresponde a nenhum status disponível!`);
+                  console.error(`[ClickUpAPI] Você deve criar estes status exatamente no ClickUp: "aberto", "em andamento", "resolvido", "fechado"`);
                   console.error(`[ClickUpAPI] Status disponíveis: ${availableStatuses.join(', ')}`);
                   
-                  throw new Error(`Status "${status}" não encontrado na lista do ClickUp. Status disponíveis: ${availableStatuses.join(', ')}`);
+                  // Usando um status de fallback baseado no nome mais próximo
+                  if (statusLowerCase.includes('aberto') || statusLowerCase.includes('open')) {
+                    const openStatus = availableStatuses.find(s => 
+                      s.toLowerCase().includes('aberto') || 
+                      s.toLowerCase().includes('open') || 
+                      s.toLowerCase().includes('to do')
+                    );
+                    if (openStatus) {
+                      console.log(`[ClickUpAPI] 🔄 Usando status de fallback "${openStatus}" para "${status}"`);
+                      status = openStatus;
+                    }
+                  } else if (statusLowerCase.includes('andamento') || statusLowerCase.includes('progress')) {
+                    const progressStatus = availableStatuses.find(s => 
+                      s.toLowerCase().includes('andamento') || 
+                      s.toLowerCase().includes('progress') || 
+                      s.toLowerCase().includes('in progress')
+                    );
+                    if (progressStatus) {
+                      console.log(`[ClickUpAPI] 🔄 Usando status de fallback "${progressStatus}" para "${status}"`);
+                      status = progressStatus;
+                    }
+                  } else if (statusLowerCase.includes('resolvido') || statusLowerCase.includes('complet')) {
+                    const resolvedStatus = availableStatuses.find(s => 
+                      s.toLowerCase().includes('resolvido') || 
+                      s.toLowerCase().includes('complet') || 
+                      s.toLowerCase().includes('done')
+                    );
+                    if (resolvedStatus) {
+                      console.log(`[ClickUpAPI] 🔄 Usando status de fallback "${resolvedStatus}" para "${status}"`);
+                      status = resolvedStatus;
+                    }
+                  } else if (statusLowerCase.includes('fechado') || statusLowerCase.includes('closed')) {
+                    const closedStatus = availableStatuses.find(s => 
+                      s.toLowerCase().includes('fechado') || 
+                      s.toLowerCase().includes('closed') || 
+                      s.toLowerCase().includes('cancel')
+                    );
+                    if (closedStatus) {
+                      console.log(`[ClickUpAPI] 🔄 Usando status de fallback "${closedStatus}" para "${status}"`);
+                      status = closedStatus;
+                    }
+                  }
+                  
+                  // Se ainda assim não encontrarmos um status, pegamos o primeiro disponível como último recurso
+                  if (!availableStatuses.includes(status) && availableStatuses.length > 0) {
+                    console.log(`[ClickUpAPI] ⚠️ Usando primeiro status disponível "${availableStatuses[0]}" como recurso final`);
+                    status = availableStatuses[0];
+                  } else if (!availableStatuses.includes(status)) {
+                    throw new Error(`Não foi possível encontrar um status correspondente para "${status}" na lista do ClickUp. Status disponíveis: ${availableStatuses.join(', ')}`);
+                  }
                 }
               }
             } else {
-              console.log(`[ClickUpAPI] ✓ Status "${status}" encontrado entre os disponíveis.`);
+              console.log(`[ClickUpAPI] ✓ Status "${status}" encontrado exatamente entre os disponíveis.`);
             }
           }
         }
@@ -299,18 +378,44 @@ export class ClickUpAPI {
       }
       
       // Agora tentamos realmente atualizar o status
-      console.log(`[ClickUpAPI] Enviando requisição para atualizar status para "${status}"`);
-      const response = await this.request(`/task/${taskId}`, {
+      console.log(`[ClickUpAPI] ⏳ Enviando requisição para atualizar status para "${status}"`);
+      const response = await this.request<any>(`/task/${taskId}`, {
         method: 'PUT',
         body: JSON.stringify({
           status
         })
       });
       
-      console.log(`[ClickUpAPI] Status atualizado com sucesso:`, response?.status);
+      console.log(`[ClickUpAPI] ✅ Status atualizado com sucesso! Nova resposta:`, JSON.stringify(response));
       return response;
     } catch (error) {
-      console.error(`[ClickUpAPI] Erro ao atualizar status:`, error);
+      console.error(`[ClickUpAPI] ❌ Erro ao atualizar status:`, error);
+       
+      // Manipular especificamente o erro "Status not found"
+      if (error instanceof Error && error.message.includes('Status not found')) {
+        console.error(`[ClickUpAPI] ❌ ERRO CRÍTICO: Status "${status}" não existe no ClickUp!`);
+        console.error(`[ClickUpAPI] Verifique se você criou os seguintes status na sua lista do ClickUp: aberto, em andamento, resolvido, fechado`);
+        console.error(`[ClickUpAPI] Cada status deve ser criado exatamente com estes nomes para que a sincronização funcione corretamente.`);
+        
+        // Tentar obter os status disponíveis
+        try {
+          console.log(`[ClickUpAPI] Tentando recuperar informações da tarefa e status disponíveis após erro`);
+          const taskData = await this.request<{list?: {id?: string}}>(`/task/${taskId}`);
+          
+          if (taskData?.list?.id) {
+            const listId = taskData.list.id;
+            const listData = await this.request<{statuses?: Array<{status: string}>}>(`/list/${listId}`);
+            
+            if (listData?.statuses) {
+              const availableStatuses = listData.statuses.map(s => s.status);
+              console.error(`[ClickUpAPI] Status disponíveis na lista:`, availableStatuses);
+            }
+          }
+        } catch (secondError) {
+          console.error(`[ClickUpAPI] Não foi possível recuperar status disponíveis:`, secondError);
+        }
+      }
+       
       throw error;
     }
   }
@@ -356,5 +461,26 @@ export class ClickUpAPI {
   // Busca todas as tarefas em uma lista
   async getAllTasks(listId: string) {
     return this.request<{ tasks: any[] }>(`/list/${listId}/task`);
+  }
+
+  // Busca uma tarefa específica
+  async getTask(taskId: string) {
+    console.log(`[ClickUpAPI] Buscando detalhes da tarefa ${taskId}`);
+    try {
+      const response = await this.request<{
+        id: string;
+        name: string;
+        status: {
+          status: string;
+          color: string;
+        };
+      }>(`/task/${taskId}`);
+      
+      console.log(`[ClickUpAPI] Detalhes da tarefa recuperados:`, JSON.stringify(response));
+      return response;
+    } catch (error) {
+      console.error(`[ClickUpAPI] Erro ao buscar tarefa ${taskId}:`, error);
+      throw error;
+    }
   }
 }

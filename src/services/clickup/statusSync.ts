@@ -1,5 +1,7 @@
-import { clickupService } from '../clickupService';
 import { ticketService } from '../ticketService';
+import { syncService } from './syncService';
+import { statusMapper } from './statusMapper';
+import { taskService } from './taskService';
 import type { Ticket, TicketStatus } from '../../types/ticket';
 
 /**
@@ -122,7 +124,8 @@ export class ClickUpStatusSync {
       
       // Propagar para o ClickUp com marcação de origem
       console.log(`[ClickUpStatusSync] Verificando configuração do ClickUp...`);
-      const isConfigured = await clickupService.isConfigured();
+      // Usar o novo serviço de tarefas para verificar a configuração
+      const isConfigured = await taskService.isConfigured();
       console.log(`[ClickUpStatusSync] ClickUp configurado: ${isConfigured}`);
       
       if (isConfigured && ticket.taskId) {
@@ -134,10 +137,21 @@ export class ClickUpStatusSync {
           status
         };
         
+        console.log(`[ClickUpStatusSync] Ticket atualizado a ser enviado para ClickUp:`, JSON.stringify({
+          id: updatedTicket.id,
+          title: updatedTicket.title, 
+          status: updatedTicket.status
+        }));
+        
+        // Usar o novo mapeador de status
+        const mappedStatus = statusMapper.mapSystemToClickUp(status);
+        console.log(`[ClickUpStatusSync] Status do sistema: ${status}, será mapeado para o ClickUp como: ${mappedStatus}`);
         console.log(`[ClickUpStatusSync] Iniciando sincronização com ClickUp para status: ${status}`);
+        
         // Adicionar marcação de origem na sincronização
         try {
-          const resultado = await clickupService.syncTicketWithClickUp(updatedTicket, { 
+          // Usar o novo serviço de sincronização
+          const resultado = await syncService.syncTicketWithClickUp(updatedTicket, { 
             source: 'ticket-system',
             skipWebhookUpdate: true
           });
@@ -147,6 +161,11 @@ export class ClickUpStatusSync {
           console.error(`[ClickUpStatusSync] ❌ Erro na sincronização com ClickUp:`, syncError);
           console.error(`[ClickUpStatusSync] Detalhes do erro:`, syncError instanceof Error ? syncError.message : 'Erro desconhecido');
           // Não falhar completamente, já que o status no sistema foi atualizado
+          
+          if (syncError instanceof Error && syncError.message.includes('Status not found')) {
+            console.error(`[ClickUpStatusSync] ❌ ERRO CRÍTICO: Status não encontrado no ClickUp!`);
+            console.error(`[ClickUpStatusSync] Verifique se os status corretos existem no ClickUp: ABERTO, EM ANDAMENTO, RESOLVIDO e FECHADO`);
+          }
         }
       } else {
         console.log(`[ClickUpStatusSync] Não foi possível propagar para ClickUp. isConfigured: ${isConfigured}, taskId: ${ticket.taskId}`);
@@ -204,22 +223,22 @@ export class ClickUpStatusSync {
    * @returns Status no formato do sistema
    */
   mapClickUpStatusToSystem(clickupStatus: string): TicketStatus {
-    // Usar o método do clickupService para manter consistência
+    // Usar o novo mapeador de status
     try {
-      return clickupService.mapClickUpStatusToSystem(clickupStatus);
+      return statusMapper.mapClickUpToSystem(clickupStatus);
     } catch (error) {
       console.error(`[ClickUpStatusSync] Erro ao mapear status do ClickUp:`, error);
       
       // Mapeamento manual alternativo (fallback)
-      const normalizedStatus = clickupStatus.toUpperCase();
+      const normalizedStatus = clickupStatus.toLowerCase();
       
-      if (normalizedStatus.includes('ABERTO') || normalizedStatus.includes('TO DO') || normalizedStatus.includes('OPEN')) {
+      if (normalizedStatus.includes('aberto') || normalizedStatus.includes('to do') || normalizedStatus.includes('open')) {
         return 'open';
-      } else if (normalizedStatus.includes('ANDAMENTO') || normalizedStatus.includes('PROGRESS') || normalizedStatus.includes('WORKING')) {
+      } else if (normalizedStatus.includes('andamento') || normalizedStatus.includes('progress') || normalizedStatus.includes('working')) {
         return 'in_progress';
-      } else if (normalizedStatus.includes('RESOLV') || normalizedStatus.includes('COMPLETE') || normalizedStatus.includes('DONE')) {
+      } else if (normalizedStatus.includes('resolv') || normalizedStatus.includes('complete') || normalizedStatus.includes('done')) {
         return 'resolved';
-      } else if (normalizedStatus.includes('FECHADO') || normalizedStatus.includes('CLOSED') || normalizedStatus.includes('CANCEL')) {
+      } else if (normalizedStatus.includes('fechado') || normalizedStatus.includes('closed') || normalizedStatus.includes('cancel')) {
         return 'closed';
       } else {
         console.warn(`[ClickUpStatusSync] Status do ClickUp não reconhecido: ${clickupStatus}, usando 'open' como padrão`);

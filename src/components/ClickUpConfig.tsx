@@ -30,6 +30,7 @@ export function ClickUpConfig() {
   const [isLoading, setIsLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error' | 'warning'>('success');
+  const [didAutoVerify, setDidAutoVerify] = useState(false);
 
   // Inicializar form com valores padrão completos se config existir
   const defaultValues = {
@@ -310,30 +311,41 @@ export function ClickUpConfig() {
 
   // Função para verificar a lista do ClickUp
   const verifyClickUpList = async () => {
-    const listId = watch('listId');
-    if (!apiKey || !listId) {
-      setTestResult({
-        success: false,
-        message: 'Forneça uma API Key e selecione uma lista para verificar'
-      });
-      return;
-    }
-
     try {
-      setTestResult({
-        success: true,
-        message: 'Verificando lista e status disponíveis...'
-      });
-
-      const clickup = new ClickUpAPI(apiKey);
+      setIsLoading(true);
+      setTestResult(null);
       
-      // Primeiro, verificar se conseguimos acessar a lista
-      try {
-        // Usar o método público da API para obter detalhes da lista
-        const listData: any = await clickup.getLists(selectedSpaceId || '').then(response => {
-          const list = response.lists.find((l: any) => l.id === listId);
-          return list || null;
+      if (!config?.listId) {
+        setTestResult({
+          success: false,
+          message: 'Por favor, configure o ID da lista primeiro'
         });
+        return;
+      }
+      
+      // Testar conexão com a API do ClickUp
+      const listId = config.listId;
+      try {
+        console.log(`[ClickUpConfig] Testando conexão com a lista ${listId}...`);
+        // Criar instância da API diretamente para testes específicos
+        const clickup = new ClickUpAPI(config.apiKey);
+        
+        // Verificar se a lista existe
+        let listData: any;
+        try {
+          // Primeiro tentar obter dados da lista diretamente
+          listData = await clickup.getList(listId);
+        } catch (e) {
+          // Se o método direto falhar, usar o método indireto para obter a lista
+          const listsResponse = await clickup.getLists(config.spaceId || '');
+          listData = listsResponse.lists.find((l: any) => l.id === listId);
+          
+          if (!listData) {
+            throw new Error(`Lista com ID ${listId} não encontrada`);
+          }
+        }
+        
+        console.log(`[ClickUpConfig] Lista encontrada: ${listData.name}`);
         
         // Verificar os status disponíveis na lista
         if (listData && listData.statuses && Array.isArray(listData.statuses)) {
@@ -341,10 +353,14 @@ export function ClickUpConfig() {
           console.log(`[ClickUpConfig] Status disponíveis na lista ${listId}:`, availableStatuses);
           
           // Status que devem existir no ClickUp para o funcionamento da integração
-          const requiredStatuses = ['ABERTO', 'EM ANDAMENTO', 'RESOLVIDO', 'FECHADO'];
+          const requiredStatuses = ['aberto', 'em andamento', 'resolvido', 'fechado'];
           
-          // Verificar se todos os status necessários estão disponíveis
-          const missingStatuses = requiredStatuses.filter(status => !availableStatuses.includes(status));
+          // Verificar se todos os status necessários estão disponíveis (case insensitive)
+          const missingStatuses = requiredStatuses.filter(status => 
+            !availableStatuses.some((availableStatus: string) => 
+              availableStatus.toLowerCase() === status.toLowerCase()
+            )
+          );
           
           if (missingStatuses.length > 0) {
             setTestResult({
@@ -364,25 +380,36 @@ export function ClickUpConfig() {
           await clickup.getAllTasks(listId);
           setTestResult({
             success: true,
-            message: `Lista verificada com sucesso! ID: ${listId}. Não foi possível verificar os status - verifique manualmente se os status ABERTO, EM ANDAMENTO, RESOLVIDO e FECHADO existem.`
+            message: `Lista verificada com sucesso! ID: ${listId}. Não foi possível verificar os status - verifique manualmente se os status aberto, em andamento, resolvido e fechado existem.`
           });
         }
-      } catch (error) {
-        console.error('Erro ao verificar lista:', error);
-        // Tentar verificar a lista de outra forma se a primeira falhar
-        await clickup.getAllTasks(listId);
+      } catch (apiError) {
+        console.error("[ClickUpConfig] Erro ao testar lista:", apiError);
+        
+        let errorMessage = "Erro ao verificar lista do ClickUp";
+        if (apiError instanceof Error) {
+          if (apiError.message.includes("not found") || apiError.message.includes("404")) {
+            errorMessage = `A lista com ID ${listId} não foi encontrada no ClickUp. Verifique se o ID está correto.`;
+          } else if (apiError.message.includes("unauthorized") || apiError.message.includes("401")) {
+            errorMessage = "API Key inválida ou sem permissão para acessar a lista. Verifique suas credenciais.";
+          } else {
+            errorMessage = apiError.message;
+          }
+        }
+        
         setTestResult({
-          success: true,
-          message: `Lista verificada com sucesso! ID: ${listId}. ⚠️ Importante: Verifique se você criou os status ABERTO, EM ANDAMENTO, RESOLVIDO e FECHADO na lista.`
+          success: false,
+          message: errorMessage
         });
       }
     } catch (error) {
+      console.error("[ClickUpConfig] Erro geral em verifyClickUpList:", error);
       setTestResult({
         success: false,
-        message: error instanceof Error 
-          ? `Erro ao verificar lista: ${error.message}. Verifique se a lista existe e se você tem acesso a ela.` 
-          : 'Erro ao verificar lista no ClickUp'
+        message: error instanceof Error ? error.message : "Erro ao verificar configuração do ClickUp"
       });
+    } finally {
+      setIsLoading(false);
     }
   };
   
@@ -543,10 +570,12 @@ export function ClickUpConfig() {
         }
         
         // Status que devem existir no ClickUp
-        const requiredStatuses = ['ABERTO', 'EM ANDAMENTO', 'RESOLVIDO', 'FECHADO'];
+        const requiredStatuses = ['aberto', 'em andamento', 'resolvido', 'fechado'];
         
-        // Verificar se todos os status necessários estão disponíveis
-        const missingStatuses = requiredStatuses.filter(status => !availableStatuses.has(status));
+        // Verificar se todos os status necessários estão disponíveis (case insensitive)
+        const missingStatuses = requiredStatuses.filter(status => 
+          !availableStatuses.has(status)
+        );
         
         if (missingStatuses.length > 0) {
           setMessage(`Atenção: Os seguintes status estão faltando no ClickUp: ${missingStatuses.join(', ')}. Isso pode causar erros ao atualizar tarefas.`);
@@ -571,6 +600,16 @@ export function ClickUpConfig() {
     }
   };
 
+  // Verificar automaticamente a lista quando a configuração estiver carregada
+  useEffect(() => {
+    // Verificar apenas uma vez por sessão para evitar chamadas desnecessárias à API
+    if (config && config.listId && config.apiKey && !didAutoVerify && !isLoading) {
+      console.log('[ClickUpConfig] Verificando lista automaticamente:', config.listId);
+      setDidAutoVerify(true);
+      verifyClickUpList();
+    }
+  }, [config, isLoading, didAutoVerify]);
+
   return (
     <div className="space-y-8">
       <div className="bg-white p-6 rounded-lg shadow">
@@ -579,23 +618,19 @@ export function ClickUpConfig() {
           <h2 className="text-lg font-medium text-gray-900">Configuração do ClickUp</h2>
         </div>
 
-        {/* Resultado do Teste de Conexão */}
+        {/* Resultados do teste */}
         {testResult && (
-          <div
-            className={`p-4 rounded-md ${
-              testResult.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
-            }`}
-          >
-            <div className="flex">
-              <div className="flex-shrink-0">
-                {testResult.success ? (
-                  <CheckCircle className="h-5 w-5 text-green-400" />
-                ) : (
-                  <XCircle className="h-5 w-5 text-red-400" />
-                )}
-              </div>
-              <div className="ml-3">
-                <p>{testResult.message}</p>
+          <div className={`mt-6 p-4 rounded-lg ${testResult.success ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+            <div className="flex items-start">
+              {testResult.success ? (
+                <CheckCircle className="h-5 w-5 text-green-500 mr-3 mt-0.5" />
+              ) : (
+                <XCircle className="h-5 w-5 text-red-500 mr-3 mt-0.5" />
+              )}
+              <div>
+                <p className={testResult.success ? 'text-green-800' : 'text-red-800'}>
+                  {testResult.message}
+                </p>
               </div>
             </div>
           </div>
@@ -827,6 +862,260 @@ export function ClickUpConfig() {
           <ClickUpConfigTest />
         </div>
       )}
+
+      {/* Teste de Status */}
+      {config?.listId && config?.apiKey && (
+        <StatusTester 
+          listId={config.listId} 
+          apiKey={config.apiKey}
+        />
+      )}
+    </div>
+  );
+}
+
+// Componente adicional para listar e testar status
+function StatusTester({ listId, apiKey }: { listId: string; apiKey: string }) {
+  const [loading, setLoading] = useState(false);
+  const [statusList, setStatusList] = useState<Array<{status: string}>>([]);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  
+  const requiredStatuses = ['aberto', 'em andamento', 'resolvido', 'fechado'];
+  
+  const loadStatus = async () => {
+    if (!listId || !apiKey) {
+      setErrorMessage('Configure o ID da lista e a API Key primeiro');
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      setErrorMessage(null);
+      setSuccessMessage(null);
+      
+      console.log('[StatusTester] Carregando status para a lista:', listId);
+      const api = new ClickUpAPI(apiKey);
+      
+      try {
+        const listData = await api.getList(listId);
+        
+        if (listData && listData.statuses) {
+          console.log('[StatusTester] Status encontrados:', listData.statuses);
+          setStatusList(listData.statuses);
+          
+          // Verificar status faltantes
+          const availableStatuses = listData.statuses.map(s => s.status);
+          const missingStatuses = requiredStatuses.filter(status => 
+            !availableStatuses.some((availableStatus: string) => 
+              availableStatus.toLowerCase() === status.toLowerCase()
+            )
+          );
+          
+          if (missingStatuses.length > 0) {
+            setErrorMessage(`Faltam os seguintes status no ClickUp: ${missingStatuses.join(', ')}`);
+          } else {
+            setSuccessMessage('Todos os status necessários estão presentes no ClickUp!');
+          }
+        } else {
+          setErrorMessage('Não foi possível carregar os status desta lista');
+        }
+      } catch (error) {
+        console.error('[StatusTester] Erro ao carregar lista:', error);
+        
+        // Tentar método alternativo com tarefas
+        try {
+          console.log('[StatusTester] Tentando método alternativo com tarefas');
+          const tasks = await api.getAllTasks(listId);
+          
+          // Extrair os status disponíveis das tarefas
+          const availableStatuses = new Set<string>();
+          if (tasks && tasks.tasks && Array.isArray(tasks.tasks)) {
+            tasks.tasks.forEach((task: any) => {
+              if (task.status && task.status.status) {
+                availableStatuses.add(task.status.status);
+              }
+            });
+            
+            if (availableStatuses.size > 0) {
+              // Converter para o formato esperado
+              setStatusList([...availableStatuses].map(status => ({ status })));
+              
+              // Verificar status faltantes
+              const missingStatuses = requiredStatuses.filter(status => 
+                ![...availableStatuses].some((availableStatus: string) => 
+                  availableStatus.toLowerCase() === status.toLowerCase()
+                )
+              );
+              
+              if (missingStatuses.length > 0) {
+                setErrorMessage(`Faltam os seguintes status no ClickUp: ${missingStatuses.join(', ')}`);
+              } else {
+                setSuccessMessage('Todos os status necessários estão presentes no ClickUp!');
+              }
+            } else {
+              setErrorMessage('Não foi possível encontrar nenhum status nas tarefas');
+            }
+          }
+        } catch (taskError) {
+          console.error('[StatusTester] Erro no método alternativo:', taskError);
+          setErrorMessage(error instanceof Error ? error.message : 'Erro desconhecido');
+        }
+      }
+    } catch (error) {
+      console.error('[StatusTester] Erro ao carregar status:', error);
+      setErrorMessage(error instanceof Error ? error.message : 'Erro desconhecido');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  // Carregar status automaticamente ao montar o componente e quando listId ou apiKey mudarem
+  useEffect(() => {
+    if (listId && apiKey) {
+      loadStatus();
+    }
+  }, [listId, apiKey]);
+  
+  const getMissingStatuses = () => {
+    const availableStatuses = statusList.map(s => s.status);
+    return requiredStatuses.filter(status => 
+      !availableStatuses.some((availableStatus: string) => 
+        availableStatus.toLowerCase() === status.toLowerCase()
+      )
+    );
+  };
+  
+  // Esta função depende da API do ClickUp permitir criar status, o que pode não ser possível via API
+  // Mantida como exemplo, mas pode exigir criação manual no ClickUp
+  const createStatusInClickUp = async (statusName: string) => {
+    try {
+      setLoading(true);
+      setErrorMessage(null);
+      setSuccessMessage(null);
+      
+      // NOTA: Este endpoint pode não existir na API do ClickUp
+      // A API atual (v2) não suporta criar status diretamente
+      // Esta é uma implementação conceitual
+      
+      /*
+      const api = new ClickUpAPI(apiKey);
+      await api.request(`/list/${listId}/status`, {
+        method: 'POST',
+        body: JSON.stringify({
+          status: statusName
+        })
+      });
+      */
+      
+      // Como provavelmente não é possível criar status via API, sugerimos manualmente
+      setSuccessMessage(`Para criar o status "${statusName}", acesse o ClickUp, vá até a lista e adicione manualmente`);
+      
+      // Recarregar a lista após criar
+      await loadStatus();
+    } catch (error) {
+      console.error('Erro ao criar status:', error);
+      setErrorMessage(error instanceof Error ? error.message : 'Erro desconhecido');
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const missingStatuses = getMissingStatuses();
+  
+  return (
+    <div className="mt-6 p-6 bg-white rounded-lg shadow-md">
+      <h3 className="text-lg font-medium text-gray-900 mb-4">Diagnóstico de Status do ClickUp</h3>
+      
+      {loading && (
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md text-blue-600 flex items-center">
+          <div className="mr-2 inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-blue-600 border-r-transparent"></div>
+          Verificando status no ClickUp...
+        </div>
+      )}
+      
+      {errorMessage && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md text-red-600">
+          {errorMessage}
+        </div>
+      )}
+      
+      {successMessage && (
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md text-green-600">
+          {successMessage}
+        </div>
+      )}
+      
+      <div className="mb-4">
+        <h4 className="font-medium text-gray-700 mb-2">Status Necessários</h4>
+        <div className="flex flex-wrap gap-2">
+          {requiredStatuses.map(status => (
+            <span 
+              key={status}
+              className={`px-3 py-1.5 rounded-full text-sm font-medium ${
+                statusList.some(s => s.status.toLowerCase() === status.toLowerCase())
+                  ? 'bg-green-100 text-green-800'
+                  : 'bg-red-100 text-red-800'
+              }`}
+            >
+              {status}
+            </span>
+          ))}
+        </div>
+      </div>
+      
+      <div className="mb-4">
+        <h4 className="font-medium text-gray-700 mb-2">Status Atuais na Lista</h4>
+        {statusList.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {statusList.map((status, idx) => (
+              <span key={idx} className="px-3 py-1.5 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                {status.status}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="text-gray-500">Nenhum status encontrado ou ainda não carregado</p>
+        )}
+      </div>
+      
+      {missingStatuses.length > 0 ? (
+        <div className="mb-4">
+          <h4 className="font-medium text-red-600 mb-2">Status que precisam ser criados</h4>
+          <div className="space-y-2">
+            {missingStatuses.map(status => (
+              <div key={status} className="flex items-center">
+                <span className="text-red-600 font-medium mr-2">{status}</span>
+                <button
+                  onClick={() => createStatusInClickUp(status)}
+                  disabled={loading}
+                  className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
+                >
+                  Instruções para criar
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-gray-600 text-sm">
+            <strong>Importante:</strong> É necessário criar manualmente cada status no ClickUp para que a sincronização funcione corretamente. 
+            Acesse a sua lista no ClickUp, vá até as configurações e adicione os status listados acima com exatamente os mesmos nomes.
+          </p>
+        </div>
+      ) : statusList.length > 0 ? (
+        <div className="p-3 bg-green-50 border border-green-200 rounded-md">
+          <p className="text-green-600">Todos os status necessários estão configurados! A sincronização deve funcionar corretamente.</p>
+        </div>
+      ) : null}
+      
+      <div className="mt-4">
+        <button
+          onClick={loadStatus}
+          disabled={loading || !listId || !apiKey}
+          className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 disabled:opacity-50"
+        >
+          {loading ? 'Carregando...' : 'Recarregar Status'}
+        </button>
+      </div>
     </div>
   );
 }

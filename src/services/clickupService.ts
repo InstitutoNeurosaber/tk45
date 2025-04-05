@@ -321,25 +321,25 @@ export class ClickUpService {
   mapStatus(status: TicketStatus): string {
     console.log(`[ClickUpService] Mapeando status do sistema: ${status} para ClickUp`);
     
-    // Mapeamento de status do sistema para o ClickUp (exatamente com esses nomes)
+    // Mapeamento de status do sistema para o ClickUp (usando minúsculas para corresponder ao ClickUp)
     let clickupStatus: string;
     
     switch (status) {
       case 'open':
-        clickupStatus = 'ABERTO';
+        clickupStatus = 'aberto';
         break;
       case 'in_progress':
-        clickupStatus = 'EM ANDAMENTO';
+        clickupStatus = 'em andamento';
         break;
       case 'resolved':
-        clickupStatus = 'RESOLVIDO';
+        clickupStatus = 'resolvido';
         break;
       case 'closed':
-        clickupStatus = 'FECHADO';
+        clickupStatus = 'fechado';
         break;
       default:
-        console.warn(`[ClickUpService] Status desconhecido: ${status}, usando ABERTO como padrão`);
-        clickupStatus = 'ABERTO';
+        console.warn(`[ClickUpService] Status desconhecido: ${status}, usando aberto como padrão`);
+        clickupStatus = 'aberto';
     }
     
     console.log(`[ClickUpService] Status mapeado para ClickUp: ${clickupStatus}`);
@@ -355,15 +355,15 @@ export class ClickUpService {
     console.log(`[ClickUpService] Mapeando status do ClickUp: ${clickupStatus} para o sistema`);
     
     // Normalizar o status para facilitar a comparação (case insensitive)
-    const normalizedStatus = clickupStatus.toUpperCase();
+    const normalizedStatus = clickupStatus.toLowerCase();
     
-    if (normalizedStatus === 'ABERTO' || normalizedStatus.includes('TO DO')) {
+    if (normalizedStatus === 'aberto' || normalizedStatus.includes('to do') || normalizedStatus.includes('open')) {
       return 'open';
-    } else if (normalizedStatus === 'EM ANDAMENTO' || normalizedStatus.includes('PROGRESS')) {
+    } else if (normalizedStatus === 'em andamento' || normalizedStatus.includes('progress') || normalizedStatus.includes('in progress')) {
       return 'in_progress';
-    } else if (normalizedStatus === 'RESOLVIDO' || normalizedStatus.includes('COMPLETE') || normalizedStatus.includes('DONE')) {
+    } else if (normalizedStatus === 'resolvido' || normalizedStatus.includes('complete') || normalizedStatus.includes('done') || normalizedStatus.includes('resolved')) {
       return 'resolved';
-    } else if (normalizedStatus === 'FECHADO' || normalizedStatus.includes('CLOSED')) {
+    } else if (normalizedStatus === 'fechado' || normalizedStatus.includes('closed') || normalizedStatus.includes('cancel') || normalizedStatus.includes('completed')) {
       return 'closed';
     } else {
       console.warn(`[ClickUpService] Status do ClickUp não reconhecido: ${clickupStatus}, usando 'open' como padrão`);

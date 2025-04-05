@@ -87,19 +87,83 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
   };
 
   const handleStatusChange = async (newStatus: TicketStatus) => {
+    // Evitar atualização se o status atual já for igual ao solicitado
+    if (newStatus === ticket.status) {
+      console.log(`[TicketDetailsModal] Status já está como ${newStatus}, ignorando`);
+      return;
+    }
+    
     try {
       setLoading(true);
       setError(null);
       setCurrentStatus(newStatus);
+      
+      console.log(`[TicketDetailsModal] Iniciando mudança de status: ${ticket.status} -> ${newStatus}`);
+      
+      // Verificar se o ticket está sincronizado com o ClickUp
+      if (ticket.taskId) {
+        console.log(`[TicketDetailsModal] Ticket possui taskId ${ticket.taskId}, verificando sincronização com ClickUp`);
+        try {
+          const clickupConfigured = await clickupService.isConfigured();
+          console.log(`[TicketDetailsModal] ClickUp configurado: ${clickupConfigured}`);
+          
+          if (clickupConfigured) {
+            console.log(`[TicketDetailsModal] ClickUp está configurado, a sincronização de status será executada`);
+            // Mostrar indicador temporário de sincronização
+            setClickUpSyncLoading(true);
+          }
+        } catch (configError) {
+          console.error("[TicketDetailsModal] Erro ao verificar configuração do ClickUp:", configError);
+        }
+      }
+      
+      // Chamada para atualizar o status
       await onStatusChange(ticket.id, newStatus);
+      console.log(`[TicketDetailsModal] Status alterado para ${newStatus} no sistema`);
+      
+      // Atualizar o ticket no componente
       onUpdate({
         ...ticket,
         status: newStatus,
         updatedAt: new Date()
       });
+      
+      // Indicar sucesso na sincronização se aplicável
+      if (ticket.taskId) {
+        setClickUpSyncSuccess(true);
+        // Limpar após alguns segundos
+        setTimeout(() => {
+          setClickUpSyncSuccess(false);
+          setClickUpSyncLoading(false);
+        }, 3000);
+      }
+      
+      console.log(`[TicketDetailsModal] UI atualizada com novo status: ${newStatus}`);
     } catch (error) {
-      setError(error instanceof Error ? error.message : 'Erro ao atualizar status');
+      console.error(`[TicketDetailsModal] ERRO ao atualizar status:`, error);
+      
+      let errorMessage = 'Erro ao atualizar status';
+      if (error instanceof Error) {
+        if (error.message.includes('Status not found')) {
+          errorMessage = 'Erro: Status não encontrado no ClickUp. Verifique se você criou os status ABERTO, EM ANDAMENTO, RESOLVIDO e FECHADO na sua lista do ClickUp.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
+      setError(errorMessage);
       setCurrentStatus(ticket.status);
+      
+      // Mostrar erro de sincronização se aplicável
+      if (ticket.taskId) {
+        setClickUpSyncError(errorMessage);
+        setClickUpSyncLoading(false);
+        
+        // Limpar o erro após 10 segundos
+        setTimeout(() => {
+          setClickUpSyncError(null);
+        }, 10000);
+      }
     } finally {
       setLoading(false);
     }

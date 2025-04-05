@@ -105,18 +105,18 @@ export const priorityDeadlines: Record<TicketPriority, number> = {
 
 // Mapeamento de status do sistema para o ClickUp
 export const clickupStatusMap: Record<TicketStatus, string> = {
-  'open': 'ABERTO',
-  'in_progress': 'EM ANDAMENTO',
-  'resolved': 'RESOLVIDO',
-  'closed': 'FECHADO'
+  'open': 'aberto',
+  'in_progress': 'em andamento',
+  'resolved': 'resolvido',
+  'closed': 'fechado'
 };
 
 // Mapeamento reverso para converter status do ClickUp em status do sistema
 export const clickupStatusReverseMap: Record<string, TicketStatus> = {
-  'ABERTO': 'open',
-  'EM ANDAMENTO': 'in_progress',
-  'RESOLVIDO': 'resolved',
-  'FECHADO': 'closed'
+  'aberto': 'open',
+  'em andamento': 'in_progress',
+  'resolvido': 'resolved',
+  'fechado': 'closed'
 };
 
 //  Mapeamento de prioridades para o ClickUp
