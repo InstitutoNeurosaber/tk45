@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, User, AlertCircle, Image as ImageIcon, CheckCircle, Clock, Edit2, MessageSquare, X } from 'lucide-react';
+import { Send, User, AlertCircle, Image as ImageIcon, CheckCircle, Clock, Edit2, MessageSquare, X, WifiOff, RefreshCw } from 'lucide-react';
 import { useCollaborativeComments } from '../hooks/useCollaborativeComments';
 import { useAuthStore } from '../stores/authStore';
 import { storage } from '../lib/firebase';
@@ -22,6 +22,7 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
   const [localMessages, setLocalMessages] = useState<Comment[]>([]);
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [replyingToComment, setReplyingToComment] = useState<Comment | null>(null);
+  const [isReconnecting, setIsReconnecting] = useState(false);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -35,9 +36,12 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
     activeUsers,
     error: chatError,
     isConnected,
+    isInitialized,
+    isOnline,
     addComment,
     setTypingStatus,
-    typingUsers
+    typingUsers,
+    forceReconnect
   } = useCollaborativeComments(ticket.id);
 
   // Combinar mensagens do servidor com mensagens locais ainda não confirmadas
@@ -81,6 +85,21 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
       }
     };
   }, [isTyping, setTypingStatus]);
+
+  const handleReconnect = () => {
+    setIsReconnecting(true);
+    setError(null);
+    
+    // Chamar função de reconexão do hook
+    if (forceReconnect) {
+      forceReconnect();
+      
+      // Reset do estado após 3 segundos
+      setTimeout(() => {
+        setIsReconnecting(false);
+      }, 3000);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -583,22 +602,84 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 flex flex-col h-full">
-      {/* Cabeçalho */}
-      <div className="p-4 border-b border-gray-200">
-        <h3 className="text-lg font-medium text-gray-900">Comentários colaborativos</h3>
-        {error && (
-          <div className="mt-1 p-2 bg-red-50 text-red-600 text-sm rounded-md">
-            {error}
+    <div className="flex flex-col h-full">
+      {/* Área de mensagens de status */}
+      {(chatError || !isConnected) && (
+        <div className={`px-4 py-2 mb-2 rounded flex items-center justify-between ${
+          !isOnline 
+          ? "bg-red-100 text-red-700" 
+          : !isConnected 
+            ? "bg-amber-100 text-amber-700" 
+            : "bg-red-100 text-red-700"
+        }`}>
+          <div className="flex items-center gap-2">
+            {!isOnline ? (
+              <>
+                <WifiOff className="h-4 w-4" />
+                <span className="text-sm">Sem conexão com a internet. Os comentários serão salvos quando a conexão for restabelecida.</span>
+              </>
+            ) : !isConnected ? (
+              <>
+                <AlertCircle className="h-4 w-4" />
+                <span className="text-sm">Modo colaborativo offline - Os comentários serão sincronizados quando a conexão for restabelecida. Os comentários continuam sendo salvos normalmente.</span>
+              </>
+            ) : (
+              <>
+                <AlertCircle className="h-4 w-4" />
+                <span className="text-sm">{chatError || 'Erro de conexão'}</span>
+              </>
+            )}
           </div>
-        )}
-        {!isConnected && (
-          <div className="mt-1 p-2 bg-yellow-50 text-yellow-700 text-sm rounded-md flex items-center">
-            <AlertCircle className="h-4 w-4 mr-2 text-yellow-500" />
-            Modo offline - Os comentários serão sincronizados quando a conexão for restabelecida
-          </div>
-        )}
-      </div>
+          
+          <button 
+            onClick={handleReconnect}
+            disabled={isReconnecting || (!navigator.onLine && !isConnected)}
+            className={`p-1 rounded text-xs flex items-center gap-1 ${
+              isReconnecting 
+                ? 'bg-gray-200 text-gray-600 cursor-not-allowed' 
+                : 'bg-amber-200 text-amber-800 hover:bg-amber-300'
+            }`}
+          >
+            <RefreshCw className={`h-3 w-3 ${isReconnecting ? 'animate-spin' : ''}`} />
+            {isReconnecting ? 'Reconectando...' : 'Reconectar'}
+          </button>
+        </div>
+      )}
+
+      {/* Exibir erro específico do formulário */}
+      {error && (
+        <div className="px-4 py-2 mb-2 bg-red-100 text-red-700 rounded flex items-center gap-2">
+          <AlertCircle className="h-4 w-4" />
+          <span className="text-sm">{error}</span>
+          <button 
+            onClick={() => setError(null)} 
+            className="ml-auto p-1"
+            aria-label="Fechar mensagem de erro"
+            title="Fechar mensagem de erro"
+          >
+            <X className="h-3 w-3 text-red-500" />
+          </button>
+        </div>
+      )}
+
+      {/* Área de usuários ativos */}
+      {activeUsers.length > 0 && (
+        <div className="px-4 py-2 mb-2 bg-blue-50 text-blue-700 rounded text-xs">
+          <span className="font-medium">Ativos:</span>{' '}
+          {activeUsers.map(u => u.user?.name).join(', ')}
+          
+          {typingUsers.length > 0 && (
+            <div className="mt-1">
+              <span className="font-medium">Digitando:</span>{' '}
+              {typingUsers.map(userId => {
+                const user = activeUsers.find(u => u.user?.id === userId);
+                return user?.user?.name || 'Usuário';
+              }).join(', ')}
+              <span className="animate-pulse">...</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Área de mensagens */}
       <div 

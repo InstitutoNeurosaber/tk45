@@ -306,15 +306,21 @@ export class YjsProvider {
     };
   }
 
-  public addComment(comment: Comment) {
-    // Permitir adição de comentários mesmo offline
-    // Os dados serão sincronizados quando a conexão for restaurada
-    console.log(`[YJS] Adding comment (${this.roomId}):`, comment, 
-      this.offlineMode ? '(offline mode)' : '');
-
+  public addComment(comment: Comment, persistToFirestore: boolean = true) {
+    if (this.documentDestroyed) {
+      console.warn(`[YJS] Tentativa de adicionar comentário em documento destruído (${this.roomId})`);
+      return false;
+    }
+    
     try {
+      console.log(`[YJS] Adding comment to room ${this.roomId}:`, comment);
       this.commentsArray.push([comment]);
-      console.log(`[YJS] Comment added successfully (${this.roomId})`);
+      
+      // Log para depuração: verificar se o comentário foi adicionado
+      const comments = this.commentsArray.toArray();
+      console.log(`[YJS] Comments after adding (${this.roomId}, total: ${comments.length}):`, 
+        comments.map(c => ({ id: c.id, content: c.content?.substring(0, 20) + '...' })));
+      
       return true;
     } catch (error) {
       console.error(`[YJS] Error adding comment (${this.roomId}):`, error);

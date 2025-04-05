@@ -3,24 +3,29 @@ import { YjsProvider } from '../lib/yjs';
 import { useAuthStore } from '../stores/authStore';
 import { useTicketStore } from '../stores/ticketStore';
 import type { Comment } from '../types/ticket';
+import { ticketService } from '../services/ticketService';
 
 // Fila para comentários que falham ao serem enviados para armazenamento offline
 let pendingCommentQueue: {ticketId: string, comment: Omit<Comment, 'id'>}[] = [];
 
 export function useCollaborativeComments(ticketId: string) {
   const { user, userData } = useAuthStore();
-  const { addComment: addTicketComment } = useTicketStore();
+  const { addComment: addTicketComment, getTicketById } = useTicketStore();
   const [provider, setProvider] = useState<YjsProvider | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
   const [activeUsers, setActiveUsers] = useState<any[]>([]);
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [connectionAttempts, setConnectionAttempts] = useState(0);
   const providerRef = useRef<YjsProvider | null>(null);
   const connectionCheckInterval = useRef<NodeJS.Timeout>();
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
   const queueProcessorRef = useRef<NodeJS.Timeout>();
+  const syncCompletedRef = useRef(false);
+  const networkOnlineRef = useRef(navigator.onLine);
 
   // Função para processar a fila de comentários pendentes
   const processCommentQueue = useCallback(() => {
@@ -51,6 +56,60 @@ export function useCollaborativeComments(ticketId: string) {
       }
     }
   }, [ticketId, addTicketComment]);
+
+  // Verificar conexão com a internet de forma mais robusta
+  useEffect(() => {
+    const handleOnline = () => {
+      console.log('[Comments] Conexão com a internet detectada.');
+      networkOnlineRef.current = true;
+      
+      // Tentar reiniciar o provedor se estiver desconectado
+      if (!isConnected && providerRef.current) {
+        console.log('[Comments] Tentando reconectar após detecção de conexão com a internet...');
+        reconnectAttempts.current = 0;
+        providerRef.current.reconnect();
+        
+        // Agendar uma verificação do estado de conexão
+        setTimeout(() => {
+          if (providerRef.current && providerRef.current.isConnected()) {
+            setIsConnected(true);
+            setError(null);
+          } else {
+            setConnectionAttempts(prev => prev + 1);
+          }
+        }, 2000);
+      }
+      
+      // Processar fila de comentários pendentes
+      if (pendingCommentQueue.length > 0) {
+        processCommentQueue();
+      }
+    };
+    
+    const handleOffline = () => {
+      console.log('[Comments] Conexão com a internet perdida.');
+      networkOnlineRef.current = false;
+      setIsConnected(false);
+    };
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    // Verificar conexão atual no momento do setup
+    if (navigator.onLine && !isConnected && providerRef.current) {
+      console.log('[Comments] Dispositivo online no setup, verificando conexão do provedor...');
+      setTimeout(() => {
+        if (providerRef.current && providerRef.current.isConnected()) {
+          setIsConnected(true);
+        }
+      }, 1000);
+    }
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [isConnected, processCommentQueue]);
 
   useEffect(() => {
     // Configurar processamento periódico da fila
@@ -95,14 +154,63 @@ export function useCollaborativeComments(ticketId: string) {
         // Carregar comentários iniciais
         const commentsArray = yjsProvider.getCommentsArray();
         const initialComments = commentsArray.toArray();
-        console.log('[Comments] Initial comments:', initialComments);
+        console.log('[Comments] Initial comments from YJS:', initialComments);
+        
+        // Carregar comentários do Firestore e adicionar ao YJS se não existirem
+        const loadFirestoreComments = async () => {
+          try {
+            console.log('[Comments] Loading ticket data from Firestore to sync comments');
+            // Buscar o ticket com comentários do Firebase
+            const ticketData = await getTicketById(ticketId);
+            
+            if (ticketData && ticketData.comments && ticketData.comments.length > 0) {
+              console.log('[Comments] Found comments in Firestore:', ticketData.comments.length);
+              
+              // Para cada comentário no Firestore, checar se já existe no YJS
+              const existingCommentIds = initialComments.map(c => c.id);
+              let commentsAdded = 0;
+              
+              // Adicionar apenas comentários que não existem no YJS
+              for (const comment of ticketData.comments) {
+                if (!existingCommentIds.includes(comment.id)) {
+                  console.log('[Comments] Adding Firestore comment to YJS:', comment.id);
+                  yjsProvider.addComment(comment, false); // false indica para não propagar ao Firestore
+                  commentsAdded++;
+                }
+              }
+              
+              if (commentsAdded > 0) {
+                console.log(`[Comments] Added ${commentsAdded} comments from Firestore to YJS`);
+                
+                // Obter comentários atualizados
+                const updatedComments = yjsProvider.getCommentsArray().toArray();
+                setComments(updatedComments);
+              }
+            } else {
+              console.log('[Comments] No comments found in Firestore or unable to load ticket data');
+            }
+            
+            // Marcar como inicializado
+            setIsInitialized(true);
+            syncCompletedRef.current = true;
+          } catch (error) {
+            console.error('[Comments] Error loading Firestore comments:', error);
+            setIsInitialized(true); // Marcar como inicializado mesmo com erro
+            syncCompletedRef.current = true;
+          }
+        };
+        
+        // Chamar a função assíncrona
+        loadFirestoreComments();
+
+        // Definir comentários iniciais do YJS enquanto carrega do Firestore
         setComments(initialComments);
 
         // Observar mudanças nos comentários em tempo real
         const unobserveComments = yjsProvider.observeComments(() => {
           if (!yjsProvider) return;
           const newComments = yjsProvider.getCommentsArray().toArray();
-          console.log('[Comments] Comments updated:', newComments);
+          console.log('[Comments] Comments updated in YJS:', newComments);
           setComments(newComments);
         });
 
@@ -127,27 +235,54 @@ export function useCollaborativeComments(ticketId: string) {
         awareness.on('change', updateActiveUsers);
         updateActiveUsers();
 
-        // Monitorar estado da conexão
+        // Monitorar estado da conexão de forma mais agressiva
         const checkConnection = () => {
           if (!yjsProvider) return;
+          
           const connected = yjsProvider.isConnected();
-          console.log('[Comments] Connection status:', connected);
-          setIsConnected(connected);
+          console.log('[Comments] Connection status check:', connected);
+          
+          // Atualizar estado de conexão apenas se mudar para evitar renderizações desnecessárias
+          if (connected !== isConnected) {
+            console.log('[Comments] Connection status changed to:', connected);
+            setIsConnected(connected);
+          }
 
-          if (!connected && reconnectAttempts.current < maxReconnectAttempts) {
-            console.log('[Comments] Attempting to reconnect...');
+          // Se offline, verificar se temos uma conexão com a internet
+          if (!connected && navigator.onLine && reconnectAttempts.current < maxReconnectAttempts) {
+            console.log('[Comments] Dispositivo online mas provedor desconectado. Tentando reconectar...');
             reconnectAttempts.current++;
             yjsProvider.reconnect();
+            setConnectionAttempts(prev => prev + 1);
+          } else if (connected) {
+            // Resetar contadores quando conectado
+            reconnectAttempts.current = 0;
+            setConnectionAttempts(0);
+            setError(null);
           }
         };
 
-        // Verificar conexão inicialmente e periodicamente (menos frequente)
+        // Verificar conexão inicialmente e periodicamente (a cada 10 segundos)
         checkConnection();
-        connectionCheckInterval.current = setInterval(checkConnection, 15000); // 15 segundos em vez de 5s
+        connectionCheckInterval.current = setInterval(checkConnection, 10000);
 
         setProvider(yjsProvider);
-        setError(null);
-        setIsConnected(true);
+        
+        // Verificar conexão após um curto delay para dar tempo ao provedor de se conectar
+        setTimeout(() => {
+          const connectionStatus = yjsProvider.isConnected();
+          console.log('[Comments] Initial connection check result:', connectionStatus);
+          setIsConnected(connectionStatus);
+          if (!connectionStatus && navigator.onLine) {
+            console.log('[Comments] Initial connection failed but device is online. Scheduling retry...');
+            setTimeout(() => {
+              if (yjsProvider && !yjsProvider.isConnected() && navigator.onLine) {
+                console.log('[Comments] Automatic reconnection attempt...');
+                yjsProvider.reconnect();
+              }
+            }, 2000);
+          }
+        }, 1500);
 
         // Processar a fila logo após a inicialização
         if (pendingCommentQueue.length > 0) {
@@ -211,7 +346,7 @@ export function useCollaborativeComments(ticketId: string) {
         providerRef.current = null;
       }
     };
-  }, [ticketId, user, userData, processCommentQueue]);
+  }, [ticketId, user, userData, processCommentQueue, getTicketById, isConnected, connectionAttempts]);
 
   const addComment = useCallback(async (comment: Omit<Comment, 'id'>) => {
     const currentProvider = providerRef.current;
@@ -223,6 +358,7 @@ export function useCollaborativeComments(ticketId: string) {
 
     console.log('[Comments] Adicionando comentário:', comment);
     console.log('[Comments] Ticket ID para o comentário:', ticketId);
+    console.log('[Comments] Estado da conexão:', isConnected, 'Internet:', navigator.onLine);
 
     try {
       const commentWithId: Comment = {
@@ -231,7 +367,7 @@ export function useCollaborativeComments(ticketId: string) {
       };
 
       console.log('[Comments] Adicionando comentário ao provedor YJS com ID:', commentWithId.id);
-      const success = currentProvider.addComment(commentWithId);
+      const success = currentProvider.addComment(commentWithId, true); // true indica para propagar ao Firestore
       
       if (!success) {
         console.error('[Comments] Falha ao adicionar comentário ao provedor YJS');
@@ -240,9 +376,9 @@ export function useCollaborativeComments(ticketId: string) {
       
       console.log('[Comments] Comentário adicionado com sucesso ao provedor YJS');
 
-      // Adicionar o comentário ao banco de dados para garantir que o webhook seja acionado
+      // Sempre adicionar o comentário ao Firestore, independentemente do estado de conexão do YJS
       try {
-        console.log('[Comments] Adicionando comentário ao ticket store para acionar webhook...');
+        console.log('[Comments] Adicionando comentário ao ticket store para garantir persistência...');
         console.log('[Comments] Dados para o ticketStore:', {
           ticketId,
           content: comment.content,
@@ -255,64 +391,21 @@ export function useCollaborativeComments(ticketId: string) {
           userId: comment.userId,
           userName: comment.userName
         });
-        console.log('[Comments] Comentário adicionado com sucesso ao ticket store, webhook deveria ter sido acionado');
+        console.log('[Comments] Comentário adicionado com sucesso ao Firestore');
         
-        // MÉTODO ALTERNATIVO: Tentar chamar o webhook diretamente como fallback
-        console.log('[Comments] Tentando enviar webhook diretamente como método alternativo');
-        try {
-          // URL direta para webhook em produção
-          const webhookUrl = 'https://webhook.sistemaneurosaber.com.br/webhook/comentario';
-          
-          console.log('[Comments] Usando URL de produção diretamente:', webhookUrl);
-          
-          const payload = {
-            event: 'ticket.status_changed',
-            data: {
-              ticketId,
-              status: 'commented',
-              previousStatus: 'open',
-              userId: comment.userId,
-              userName: comment.userName,
-              comment: {
-                ...comment, 
-                id: commentWithId.id,
-                createdAt: new Date()
-              }
-            },
-            timestamp: new Date().toISOString(),
-            userId: comment.userId,
-            userName: comment.userName
-          };
-          
-          console.log('[Comments] Payload para webhook direto:', JSON.stringify(payload, null, 2));
-          
-          const webhookResponse = await fetch('https://tickets.sistemaneurosaber.com.br/.netlify/functions/webhook-proxy', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              ...payload,
-              targetUrl: webhookUrl
-            })
-          });
-          
-          console.log('[Comments] Status da resposta do webhook:', webhookResponse.status);
-          
-          if (webhookResponse.ok) {
-            const responseData = await webhookResponse.json();
-            console.log('[Comments] Webhook alternativo enviado com sucesso:', responseData);
-          } else {
-            const errorText = await webhookResponse.text();
-            console.warn('[Comments] Webhook alternativo falhou:', webhookResponse.status, errorText);
+        // Se estávamos tentando reconectar, verificar se agora estamos conectados
+        if (!isConnected && currentProvider) {
+          const nowConnected = currentProvider.isConnected();
+          if (nowConnected) {
+            console.log('[Comments] Conexão restaurada durante adição de comentário');
+            setIsConnected(true);
           }
-        } catch (directWebhookError) {
-          console.error('[Comments] Erro ao tentar webhook direto:', directWebhookError);
         }
-      } catch (webhookError) {
-        console.error('[Comments] Erro ao adicionar comentário ao ticket store:', webhookError);
+      } catch (firestoreError) {
+        console.error('[Comments] Erro ao adicionar comentário ao Firestore:', firestoreError);
         
-        // Adicionar à fila para tentativas posteriores
+        // Adicionar à fila para tentativas posteriores apenas se falhar no Firestore
+        // O comentário já foi adicionado no YJS local
         pendingCommentQueue.push({
           ticketId,
           comment
@@ -329,17 +422,14 @@ export function useCollaborativeComments(ticketId: string) {
       // Se falhar ao adicionar ao colaborativo, tenta adicionar diretamente ao banco
       try {
         console.log('[Comments] Fallback: tentando adicionar diretamente ao ticket store');
-        await addTicketComment(ticketId, {
+        const newComment = await addTicketComment(ticketId, {
           content: comment.content,
           userId: comment.userId,
           userName: comment.userName
         });
         console.log('[Comments] Fallback bem-sucedido: comentário adicionado ao ticket store diretamente');
         
-        return {
-          ...comment,
-          id: crypto.randomUUID()
-        };
+        return newComment;
       } catch (fallbackError) {
         console.error('[Comments] Fallback falhou:', fallbackError);
         
@@ -353,7 +443,7 @@ export function useCollaborativeComments(ticketId: string) {
         throw new Error('Não foi possível salvar o comentário. Tentaremos novamente quando a conexão for restabelecida.');
       }
     }
-  }, [ticketId, addTicketComment]);
+  }, [ticketId, addTicketComment, isConnected]);
 
   const setTypingStatus = useCallback((isTyping: boolean) => {
     const currentProvider = providerRef.current;
@@ -374,13 +464,42 @@ export function useCollaborativeComments(ticketId: string) {
     }
   }, [user]);
 
+  // Função para forçar reconexão
+  const forceReconnect = useCallback(() => {
+    if (providerRef.current) {
+      console.log('[Comments] Forçando reconexão manualmente...');
+      reconnectAttempts.current = 0;
+      providerRef.current.reconnect();
+      setConnectionAttempts(prev => prev + 1);
+      
+      // Verificar se a conexão foi reestabelecida após um delay
+      setTimeout(() => {
+        if (providerRef.current && providerRef.current.isConnected()) {
+          console.log('[Comments] Reconexão manual bem-sucedida');
+          setIsConnected(true);
+          setError(null);
+        } else {
+          console.log('[Comments] Reconexão manual falhou');
+          // Tentar novamente com outro método se ainda estiver online
+          if (navigator.onLine) {
+            console.log('[Comments] Tentando método alternativo de reconexão...');
+            // Aqui poderia implementar outras estratégias de reconexão
+          }
+        }
+      }, 2000);
+    }
+  }, []);
+
   return {
     comments,
     activeUsers,
     typingUsers: Array.from(typingUsers),
     error,
     isConnected,
+    isInitialized,
+    isOnline: navigator.onLine,
     addComment,
-    setTypingStatus
+    setTypingStatus,
+    forceReconnect
   };
 }

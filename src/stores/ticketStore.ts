@@ -13,6 +13,7 @@ interface TicketState {
   setTickets: (tickets: Ticket[]) => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
+  getTicketById: (id: string) => Promise<Ticket | null>;
   createTicket: (ticket: Omit<Ticket, 'id' | 'createdAt' | 'updatedAt' | 'deadline'>) => Promise<Ticket>;
   updateTicket: (ticketId: string, changes: Partial<Ticket>) => Promise<void>;
   updateTicketStatus: (ticketId: string, status: TicketStatus) => Promise<void>;
@@ -31,6 +32,62 @@ export const useTicketStore = create<TicketState>((set, get) => ({
   setTickets: (tickets) => set({ tickets }),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
+
+  getTicketById: async (id) => {
+    // Primeiro verifica se o ticket já está no state
+    const cachedTicket = get().tickets.find(t => t.id === id);
+    if (cachedTicket) {
+      console.log(`[TicketStore] Ticket ${id} encontrado no cache`);
+      return cachedTicket;
+    }
+
+    // Se não estiver no state, busca do Firestore
+    try {
+      console.log(`[TicketStore] Buscando ticket ${id} do Firestore`);
+      const ticketRef = doc(db, 'tickets', id);
+      const ticketDoc = await getDoc(ticketRef);
+      
+      if (!ticketDoc.exists()) {
+        console.log(`[TicketStore] Ticket ${id} não encontrado no Firestore`);
+        return null;
+      }
+      
+      const ticketData = ticketDoc.data();
+      const ticket: Ticket = {
+        id: ticketDoc.id,
+        title: ticketData.title,
+        description: ticketData.description,
+        status: ticketData.status,
+        priority: ticketData.priority,
+        category: ticketData.category,
+        userId: ticketData.userId,
+        createdAt: ticketData.createdAt.toDate(),
+        updatedAt: ticketData.updatedAt.toDate(),
+        deadline: ticketData.deadline.toDate(),
+        comments: ticketData.comments?.map((comment: any) => ({
+          ...comment,
+          createdAt: comment.createdAt.toDate()
+        })) || [],
+        attachments: ticketData.attachments || [],
+        taskId: ticketData.taskId,
+        priorityLockedAt: ticketData.priorityLockedAt?.toDate(),
+        priorityLockedBy: ticketData.priorityLockedBy,
+        priorityReason: ticketData.priorityReason,
+        deadlineHistory: ticketData.deadlineHistory?.map((history: any) => ({
+          ...history,
+          oldDeadline: history.oldDeadline.toDate(),
+          newDeadline: history.newDeadline.toDate(),
+          extendedAt: history.extendedAt.toDate()
+        })) || []
+      };
+      
+      console.log(`[TicketStore] Ticket ${id} encontrado no Firestore:`, ticket);
+      return ticket;
+    } catch (error) {
+      console.error(`[TicketStore] Erro ao buscar ticket ${id}:`, error);
+      throw error;
+    }
+  },
 
   createTicket: async (ticketData) => {
     try {
