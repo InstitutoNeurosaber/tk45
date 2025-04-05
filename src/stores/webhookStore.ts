@@ -191,14 +191,59 @@ export const useWebhookStore = create<WebhookState>()(
     deleteWebhook: async (id: string) => {
       try {
         set({ loading: true, error: null });
-        await deleteDoc(doc(db, 'webhooks_config', id));
+        console.log(`[WebhookStore] Iniciando exclusão do webhook: ${id}`);
         
+        // Primeiro, excluir da coleção webhooks_config
+        try {
+          console.log(`[WebhookStore] Excluindo da coleção webhooks_config: ${id}`);
+          await deleteDoc(doc(db, 'webhooks_config', id));
+          console.log(`[WebhookStore] Exclusão bem-sucedida da coleção webhooks_config`);
+        } catch (configError) {
+          console.error(`[WebhookStore] Erro ao excluir da coleção webhooks_config:`, configError);
+          throw new Error(`Erro ao excluir webhook (config): ${configError instanceof Error ? configError.message : 'Erro desconhecido'}`);
+        }
+        
+        // Tentar excluir também da coleção webhooks para garantir consistência
+        try {
+          console.log(`[WebhookStore] Tentando excluir da coleção webhooks: ${id}`);
+          await deleteDoc(doc(db, 'webhooks', id));
+          console.log(`[WebhookStore] Exclusão bem-sucedida da coleção webhooks`);
+        } catch (oldCollectionError) {
+          // Ignorar erros aqui, pois pode não existir na coleção antiga
+          console.log(`[WebhookStore] Webhook não encontrado na coleção antiga (ou erro ao excluir):`, oldCollectionError);
+        }
+        
+        // Tentar excluir via API Netlify para garantir
+        try {
+          console.log(`[WebhookStore] Tentando excluir via função Netlify`);
+          const response = await fetch('/.netlify/functions/delete-webhook', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ webhookId: id })
+          });
+          
+          if (response.ok) {
+            console.log(`[WebhookStore] Exclusão via função Netlify bem-sucedida`);
+          } else {
+            console.warn(`[WebhookStore] Erro na função Netlify, mas continuando:`, await response.text());
+          }
+        } catch (functionError) {
+          // Também ignoramos erros aqui, pois a exclusão principal já foi feita
+          console.warn(`[WebhookStore] Erro ao chamar função Netlify:`, functionError);
+        }
+        
+        // Atualizar estado local
+        console.log(`[WebhookStore] Atualizando estado local após exclusão`);
         set(state => ({
           webhooks: state.webhooks.filter(webhook => webhook.id !== id),
           loading: false
         }));
+        
+        console.log(`[WebhookStore] Webhook ${id} excluído com sucesso`);
       } catch (error) {
-        console.error('Erro ao deletar webhook:', error);
+        console.error(`[WebhookStore] Erro ao deletar webhook:`, error);
         set({ error: error instanceof Error ? error.message : 'Erro ao deletar webhook', loading: false });
         throw error;
       }

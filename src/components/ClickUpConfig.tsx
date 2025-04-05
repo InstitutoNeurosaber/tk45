@@ -7,6 +7,8 @@ import { useClickUpStore } from '../stores/clickupStore';
 import { useAuthStore } from '../stores/authStore';
 import { ClickUpAPI } from '../lib/clickup';
 import { ClickUpIntegration } from './ClickUpIntegration';
+import { clickupService } from '../services/clickupService';
+import { ClickUpConfigTest } from './ClickUpConfigTest';
 
 const configSchema = z.object({
   apiKey: z.string().min(1, 'API Key é obrigatória'),
@@ -26,6 +28,8 @@ export function ClickUpConfig() {
   const [lists, setLists] = useState<Array<{ id: string; name: string }>>([]);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState<'success' | 'error' | 'warning'>('success');
 
   // Inicializar form com valores padrão completos se config existir
   const defaultValues = {
@@ -87,15 +91,71 @@ export function ClickUpConfig() {
   // Carregar configuração existente
   useEffect(() => {
     if (user) {
-      fetchConfig(user.uid).then(() => {
+      console.log('[ClickUpConfig] Iniciando carregamento da configuração para usuário:', user.uid);
+      
+      // Função para verificar o estado após o carregamento
+      const verificarEstado = () => {
+        const currentConfig = useClickUpStore.getState().config;
+        console.log('[ClickUpConfig] Verificando config após carregamento:', currentConfig);
+        
+        if (!currentConfig) {
+          console.warn('[ClickUpConfig] Configuração não carregada, tentando recuperar do localStorage');
+          
+          // Tentativa de recuperação manual do localStorage
+          try {
+            const savedConfig = localStorage.getItem('clickup-config');
+            if (savedConfig) {
+              const parsedConfig = JSON.parse(savedConfig);
+              console.log('[ClickUpConfig] Configuração recuperada do localStorage:', parsedConfig);
+              
+              if (parsedConfig) {
+                // Restaurar manualmente a configuração
+                useClickUpStore.setState({
+                  config: parsedConfig,
+                  selectedWorkspaceId: parsedConfig.workspaceId,
+                  selectedSpaceId: parsedConfig.spaceId,
+                  selectedListId: parsedConfig.listId
+                });
+                
+                console.log('[ClickUpConfig] Estado restaurado manualmente do localStorage');
+              }
+            }
+          } catch (error) {
+            console.error('[ClickUpConfig] Erro ao recuperar dados do localStorage:', error);
+          }
+        }
+        
         setIsLoading(false);
-      });
+      };
+      
+      // Carregar configuração do Firestore e depois verificar
+      fetchConfig(user.uid)
+        .then(() => {
+          console.log('[ClickUpConfig] Configuração carregada com sucesso');
+          // Verificar após um pequeno delay para garantir que o estado foi atualizado
+          setTimeout(verificarEstado, 200);
+        })
+        .catch(error => {
+          console.error('[ClickUpConfig] Erro ao carregar configuração:', error);
+          verificarEstado();
+        });
     }
   }, [user, fetchConfig]);
 
   // Preencher formulário com configuração existente e carregar dados relacionados
   useEffect(() => {
     if (config) {
+      console.log('[ClickUpConfig] Preenchendo formulário com configuração existente:', config);
+      
+      // Verificar se todos os campos necessários estão presentes
+      if (!config.workspaceId || !config.spaceId || !config.listId) {
+        console.warn('[ClickUpConfig] ATENÇÃO: Configuração incompleta detectada ao preencher formulário!', {
+          workspaceId: config.workspaceId || 'AUSENTE',
+          spaceId: config.spaceId || 'AUSENTE',
+          listId: config.listId || 'AUSENTE'
+        });
+      }
+      
       // Atualizar valores do formulário
       reset({
         apiKey: config.apiKey,
@@ -105,10 +165,54 @@ export function ClickUpConfig() {
         active: config.active
       });
       
+      // Salvar no localStorage como fallback de segurança
+      try {
+        localStorage.setItem('clickup-config', JSON.stringify(config));
+        console.log('[ClickUpConfig] Configuração salva no localStorage como backup');
+      } catch (error) {
+        console.error('[ClickUpConfig] Erro ao salvar configuração no localStorage:', error);
+      }
+      
+      // Verificar se os valores foram definidos corretamente
+      setTimeout(() => {
+        const formValues = {
+          apiKey: watch('apiKey'),
+          workspaceId: watch('workspaceId'),
+          spaceId: watch('spaceId'),
+          listId: watch('listId'),
+          active: watch('active')
+        };
+        console.log('[ClickUpConfig] Valores do formulário após reset:', formValues);
+        
+        // Verificar se os valores do formulário correspondem à configuração
+        const missingFields = [];
+        if (formValues.apiKey !== config.apiKey) missingFields.push('apiKey');
+        if (formValues.workspaceId !== config.workspaceId) missingFields.push('workspaceId');
+        if (formValues.spaceId !== config.spaceId) missingFields.push('spaceId');
+        if (formValues.listId !== config.listId) missingFields.push('listId');
+        
+        if (missingFields.length > 0) {
+          console.warn('[ClickUpConfig] ATENÇÃO: Valores do formulário não correspondem à configuração:', missingFields);
+          
+          // Tentar corrigir manualmente
+          if (missingFields.includes('workspaceId') && config.workspaceId) {
+            setValue('workspaceId', config.workspaceId);
+          }
+          if (missingFields.includes('spaceId') && config.spaceId) {
+            setValue('spaceId', config.spaceId);
+          }
+          if (missingFields.includes('listId') && config.listId) {
+            setValue('listId', config.listId);
+          }
+        }
+      }, 300);
+      
       // Carregar dados relacionados
       loadClickUpData(config.apiKey, config.workspaceId, config.spaceId);
+    } else {
+      console.log('[ClickUpConfig] Nenhuma configuração encontrada para preencher o formulário');
     }
-  }, [config, reset, loadClickUpData]);
+  }, [config, reset, loadClickUpData, watch, setValue]);
 
   // Carregar workspaces quando a API key mudar
   useEffect(() => {
@@ -218,31 +322,100 @@ export function ClickUpConfig() {
     try {
       setTestResult({
         success: true,
-        message: 'Verificando lista...'
+        message: 'Verificando lista e status disponíveis...'
       });
 
       const clickup = new ClickUpAPI(apiKey);
-      await clickup.getAllTasks(listId);
       
-      setTestResult({
-        success: true,
-        message: `Lista verificada com sucesso! ID: ${listId}`
-      });
+      // Primeiro, verificar se conseguimos acessar a lista
+      try {
+        // Usar o método público da API para obter detalhes da lista
+        const listData: any = await clickup.getLists(selectedSpaceId || '').then(response => {
+          const list = response.lists.find((l: any) => l.id === listId);
+          return list || null;
+        });
+        
+        // Verificar os status disponíveis na lista
+        if (listData && listData.statuses && Array.isArray(listData.statuses)) {
+          const availableStatuses = listData.statuses.map((s: any) => s.status);
+          console.log(`[ClickUpConfig] Status disponíveis na lista ${listId}:`, availableStatuses);
+          
+          // Status que devem existir no ClickUp para o funcionamento da integração
+          const requiredStatuses = ['ABERTO', 'EM ANDAMENTO', 'RESOLVIDO', 'FECHADO'];
+          
+          // Verificar se todos os status necessários estão disponíveis
+          const missingStatuses = requiredStatuses.filter(status => !availableStatuses.includes(status));
+          
+          if (missingStatuses.length > 0) {
+            setTestResult({
+              success: false,
+              message: `Atenção: Os seguintes status estão faltando na lista do ClickUp: ${missingStatuses.join(', ')}. ` +
+                      `Você precisa criar estes status exatamente com estes nomes para que a sincronização funcione corretamente. ` +
+                      `Status encontrados: ${availableStatuses.join(', ')}`
+            });
+          } else {
+            setTestResult({
+              success: true,
+              message: `Lista verificada com sucesso! Todos os status necessários foram encontrados: ${requiredStatuses.join(', ')}`
+            });
+          }
+        } else {
+          // Se não conseguimos obter os status, verificamos se a lista existe tentando buscar tarefas
+          await clickup.getAllTasks(listId);
+          setTestResult({
+            success: true,
+            message: `Lista verificada com sucesso! ID: ${listId}. Não foi possível verificar os status - verifique manualmente se os status ABERTO, EM ANDAMENTO, RESOLVIDO e FECHADO existem.`
+          });
+        }
+      } catch (error) {
+        console.error('Erro ao verificar lista:', error);
+        // Tentar verificar a lista de outra forma se a primeira falhar
+        await clickup.getAllTasks(listId);
+        setTestResult({
+          success: true,
+          message: `Lista verificada com sucesso! ID: ${listId}. ⚠️ Importante: Verifique se você criou os status ABERTO, EM ANDAMENTO, RESOLVIDO e FECHADO na lista.`
+        });
+      }
     } catch (error) {
       setTestResult({
         success: false,
         message: error instanceof Error 
-          ? `Erro ao verificar lista: ${error.message}` 
+          ? `Erro ao verificar lista: ${error.message}. Verifique se a lista existe e se você tem acesso a ela.` 
           : 'Erro ao verificar lista no ClickUp'
       });
     }
   };
   
   const onSubmit = async (data: ConfigFormData) => {
-    if (!user) return;
+    if (!user) {
+      console.error('[ClickUpConfig] Tentativa de salvar configuração sem usuário autenticado');
+      return;
+    }
+
+    console.log('[ClickUpConfig] Salvando configuração com dados:', data);
 
     try {
       setTestResult(null); // Limpar resultados anteriores
+      
+      // Verificar se todos os campos importantes estão preenchidos
+      if (!data.workspaceId || !data.spaceId || !data.listId) {
+        console.warn('[ClickUpConfig] ATENÇÃO: Tentando salvar configuração incompleta!', {
+          workspaceId: data.workspaceId || 'AUSENTE',
+          spaceId: data.spaceId || 'AUSENTE',
+          listId: data.listId || 'AUSENTE'
+        });
+        
+        if (!window.confirm(
+          'Configuração incompleta! Pelo menos um dos campos obrigatórios está faltando: ' +
+          'Workspace, Space ou Lista. Deseja continuar mesmo assim?'
+        )) {
+          setTestResult({
+            success: false,
+            message: 'Operação cancelada. Por favor, preencha todos os campos obrigatórios.'
+          });
+          return;
+        }
+      }
       
       // Primeiro, verificar se conseguimos acessar a lista configurada
       try {
@@ -280,16 +453,26 @@ export function ClickUpConfig() {
         message: 'Salvando configuração...'
       });
       
-      await saveConfig({
+      const configToSave = {
         ...data,
         userId: user.uid
-      });
+      };
+      console.log('[ClickUpConfig] Dados finais a serem salvos:', configToSave);
+      
+      await saveConfig(configToSave);
       
       setTestResult({
         success: true,
         message: 'Configuração salva com sucesso!'
       });
+      
+      // Verificar se a configuração foi salva corretamente
+      setTimeout(() => {
+        const storeConfig = useClickUpStore.getState().config;
+        console.log('[ClickUpConfig] Configuração atual no store após salvamento:', storeConfig);
+      }, 500);
     } catch (error) {
+      console.error('[ClickUpConfig] Erro ao salvar configuração:', error);
       setTestResult({
         success: false,
         message: error instanceof Error ? error.message : 'Erro ao salvar configuração'
@@ -317,6 +500,76 @@ export function ClickUpConfig() {
 
   // Determinar se o botão deve ser desativado
   const isSaveDisabled = loading || isLoading;
+
+  const handleTestarStatusClickUp = async () => {
+    setIsLoading(true);
+    setMessage('');
+    
+    try {
+      console.log("[ClickUpConfig] Testando status do ClickUp");
+      
+      // Verificar se o ClickUp está configurado
+      const isConfigured = await clickupService.isConfigured();
+      if (!isConfigured) {
+        setMessage("ClickUp não está configurado. Configure a API Key e List ID primeiro.");
+        setMessageType("error");
+        return;
+      }
+      
+      // Obter a configuração atual
+      const configAtual = await clickupService['getConfig']();
+      if (!configAtual || !configAtual.listId) {
+        setMessage("Configuração incompleta. Verifique se o List ID está definido.");
+        setMessageType("error");
+        return;
+      }
+      
+      // Obter a API
+      const api = await clickupService['getAPI']();
+      
+      // Verificar os status disponíveis na lista
+      try {
+        console.log(`[ClickUpConfig] Obtendo tarefas da lista ${configAtual.listId} para verificar status`);
+        const tasks = await api.getAllTasks(configAtual.listId);
+        
+        // Extrair os status disponíveis
+        const availableStatuses = new Set<string>();
+        if (tasks && tasks.tasks && Array.isArray(tasks.tasks)) {
+          tasks.tasks.forEach((task: any) => {
+            if (task.status && task.status.status) {
+              availableStatuses.add(task.status.status);
+            }
+          });
+        }
+        
+        // Status que devem existir no ClickUp
+        const requiredStatuses = ['ABERTO', 'EM ANDAMENTO', 'RESOLVIDO', 'FECHADO'];
+        
+        // Verificar se todos os status necessários estão disponíveis
+        const missingStatuses = requiredStatuses.filter(status => !availableStatuses.has(status));
+        
+        if (missingStatuses.length > 0) {
+          setMessage(`Atenção: Os seguintes status estão faltando no ClickUp: ${missingStatuses.join(', ')}. Isso pode causar erros ao atualizar tarefas.`);
+          setMessageType("warning");
+        } else {
+          setMessage(`Configuração de status OK! Todos os status necessários foram encontrados: ${requiredStatuses.join(', ')}`);
+          setMessageType("success");
+        }
+        
+        console.log("[ClickUpConfig] Status disponíveis no ClickUp:", [...availableStatuses]);
+      } catch (error) {
+        console.error("[ClickUpConfig] Erro ao verificar status:", error);
+        setMessage(`Erro ao verificar status: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+        setMessageType("error");
+      }
+    } catch (error) {
+      console.error("[ClickUpConfig] Erro ao testar status:", error);
+      setMessage(`Erro ao testar status: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+      setMessageType("error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -550,11 +803,28 @@ export function ClickUpConfig() {
             </div>
           </form>
         )}
+
+        {/* Adicionar onde for apropriado no JSX */}
+        <button
+          onClick={handleTestarStatusClickUp}
+          className="mt-4 inline-flex items-center px-4 py-2 border border-blue-600 rounded-md shadow-sm text-sm font-medium text-blue-600 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+          disabled={isLoading}
+        >
+          <span className="mr-2">🔍</span>
+          Verificar Status do ClickUp
+        </button>
       </div>
 
       {config && !isLoading && (
         <div className="bg-white p-6 rounded-lg shadow">
           <ClickUpIntegration />
+        </div>
+      )}
+
+      {/* Adicionar a seção de testes */}
+      {config && !isLoading && (
+        <div>
+          <ClickUpConfigTest />
         </div>
       )}
     </div>

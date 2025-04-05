@@ -351,5 +351,122 @@ export const ticketService = {
       console.error('Erro ao excluir comentário:', error);
       throw new Error(error instanceof Error ? error.message : 'Erro ao excluir comentário');
     }
+  },
+
+  /**
+   * Busca um ticket pelo ID da tarefa associada no ClickUp
+   * @param taskId ID da tarefa no ClickUp
+   * @returns O ticket encontrado ou null
+   */
+  async findByTaskId(taskId: string): Promise<Ticket | null> {
+    try {
+      console.log(`[TicketService] Buscando ticket por taskId: ${taskId}`);
+      const ticketsRef = collection(db, 'tickets');
+      const q = query(ticketsRef, where('taskId', '==', taskId));
+      const snapshot = await getDocs(q);
+      
+      if (snapshot.empty) {
+        console.log(`[TicketService] Nenhum ticket encontrado com taskId: ${taskId}`);
+        return null;
+      }
+      
+      // Deveria encontrar apenas um ticket com este taskId
+      // Se houver mais de um, consideramos o primeiro como válido
+      if (snapshot.size > 1) {
+        console.warn(`[TicketService] Encontrados múltiplos tickets (${snapshot.size}) com taskId: ${taskId}. Usando o primeiro.`);
+      }
+      
+      const docData = snapshot.docs[0].data();
+      const ticket: Ticket = {
+        id: snapshot.docs[0].id,
+        title: docData.title,
+        description: docData.description,
+        status: docData.status,
+        priority: docData.priority,
+        category: docData.category,
+        userId: docData.userId,
+        createdAt: docData.createdAt.toDate(),
+        updatedAt: docData.updatedAt.toDate(),
+        deadline: docData.deadline?.toDate() || new Date(),
+        comments: docData.comments?.map((comment: any) => ({
+          ...comment,
+          createdAt: comment.createdAt.toDate()
+        })) || [],
+        attachments: docData.attachments || [],
+        taskId: docData.taskId,
+        assignedToId: docData.assignedToId,
+        assignedToName: docData.assignedToName,
+        priorityLockedAt: docData.priorityLockedAt?.toDate(),
+        priorityLockedBy: docData.priorityLockedBy,
+        priorityReason: docData.priorityReason,
+        deadlineHistory: docData.deadlineHistory?.map((history: any) => ({
+          ...history,
+          oldDeadline: history.oldDeadline.toDate(),
+          newDeadline: history.newDeadline.toDate(),
+          extendedAt: history.extendedAt.toDate()
+        })) || []
+      };
+      
+      console.log(`[TicketService] Ticket encontrado com taskId ${taskId}: ${ticket.id}`);
+      return ticket;
+    } catch (error) {
+      console.error(`[TicketService] Erro ao buscar ticket por taskId ${taskId}:`, error);
+      throw new Error(`Erro ao buscar ticket por taskId: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+    }
+  },
+  
+  /**
+   * Busca um ticket pelo seu ID
+   * @param id ID do ticket
+   * @returns O ticket encontrado ou null
+   */
+  async getTicket(id: string): Promise<Ticket | null> {
+    try {
+      console.log(`[TicketService] Buscando ticket por ID: ${id}`);
+      const ticketRef = doc(db, 'tickets', id);
+      const ticketDoc = await getDoc(ticketRef);
+      
+      if (!ticketDoc.exists()) {
+        console.log(`[TicketService] Ticket ${id} não encontrado`);
+        return null;
+      }
+      
+      const ticketData = ticketDoc.data();
+      const ticket: Ticket = {
+        id: ticketDoc.id,
+        title: ticketData.title,
+        description: ticketData.description,
+        status: ticketData.status,
+        priority: ticketData.priority,
+        category: ticketData.category,
+        userId: ticketData.userId,
+        createdAt: ticketData.createdAt.toDate(),
+        updatedAt: ticketData.updatedAt.toDate(),
+        deadline: ticketData.deadline?.toDate() || new Date(),
+        comments: ticketData.comments?.map((comment: any) => ({
+          ...comment,
+          createdAt: comment.createdAt.toDate()
+        })) || [],
+        attachments: ticketData.attachments || [],
+        taskId: ticketData.taskId,
+        assignedToId: ticketData.assignedToId,
+        assignedToName: ticketData.assignedToName,
+        priorityLockedAt: ticketData.priorityLockedAt?.toDate(),
+        priorityLockedBy: ticketData.priorityLockedBy,
+        priorityReason: ticketData.priorityReason,
+        deadlineHistory: ticketData.deadlineHistory?.map((history: any) => ({
+          ...history,
+          oldDeadline: history.oldDeadline.toDate(),
+          newDeadline: history.newDeadline.toDate(),
+          extendedAt: history.extendedAt.toDate()
+        })) || []
+      };
+      
+      console.log(`[TicketService] Ticket ${id} encontrado`);
+      return ticket;
+    } catch (error) {
+      console.error(`[TicketService] Erro ao buscar ticket ${id}:`, error);
+      throw new Error(`Erro ao buscar ticket: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+    }
   }
 };

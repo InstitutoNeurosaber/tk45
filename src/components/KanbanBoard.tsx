@@ -91,39 +91,53 @@ export function KanbanBoard({ tickets: initialTickets, onTicketClick, onTicketMo
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
-    console.log('Drag end');
+    console.log('[KanbanBoard] Drag end');
     const { active, over } = event;
     document.body.style.cursor = '';
 
     if (!over) {
-      console.log('Sem destino válido');
+      console.log('[KanbanBoard] Sem destino válido');
       resetDragState();
       return;
     }
 
-    console.log('Destino final:', over.id);
+    console.log('[KanbanBoard] Destino final:', over.id);
     
     if (!pendingStatus) {
-      console.log('Sem mudança de status pendente');
+      console.log('[KanbanBoard] Sem mudança de status pendente');
       resetDragState();
       return;
     }
 
     const activeTicket = initialTickets.find(t => t.id === active.id);
     if (!activeTicket) {
+      console.log('[KanbanBoard] Ticket ativo não encontrado');
       resetDragState();
       return;
     }
 
+    if (activeTicket.status === pendingStatus.status) {
+      console.log(`[KanbanBoard] Status não mudou (${activeTicket.status}), ignorando operação`);
+      resetDragState();
+      return;
+    }
+
+    console.log(`[KanbanBoard] Atualizando ticket ${pendingStatus.ticketId} de status ${activeTicket.status} para ${pendingStatus.status}`);
+
     try {
-      console.log('Atualizando ticket:', pendingStatus.ticketId, 'para', pendingStatus.status);
+      console.log('[KanbanBoard] Iniciando updateTicketStatus via store');
       await updateTicketStatus(pendingStatus.ticketId, pendingStatus.status);
       
       if (onTicketMove) {
+        console.log('[KanbanBoard] Notificando callback onTicketMove');
         onTicketMove(pendingStatus.ticketId, pendingStatus.status);
       }
+      
+      console.log('[KanbanBoard] Atualização de status concluída com sucesso');
     } catch (error) {
-      console.error('Erro ao mover ticket:', error);
+      console.error('[KanbanBoard] Erro ao mover ticket:', error);
+      
+      console.log('[KanbanBoard] Revertendo atualização otimista para', activeTicket.status);
       optimisticUpdateStatus(activeTicket.id, activeTicket.status);
     }
 

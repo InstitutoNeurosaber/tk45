@@ -103,12 +103,12 @@ export const priorityDeadlines: Record<TicketPriority, number> = {
   critical: 4 * 60 * 60 * 1000 // 4 horas
 };
 
-// Mapeamento de status para o ClickUp
+// Mapeamento de status do sistema para o ClickUp
 export const clickupStatusMap: Record<TicketStatus, string> = {
-  open: 'ABERTO',
-  in_progress: 'EM ANDAMENTO',
-  resolved: 'RESOLVIDO',
-  closed: 'FECHADO'
+  'open': 'ABERTO',
+  'in_progress': 'EM ANDAMENTO',
+  'resolved': 'RESOLVIDO',
+  'closed': 'FECHADO'
 };
 
 // Mapeamento reverso para converter status do ClickUp em status do sistema

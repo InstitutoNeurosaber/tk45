@@ -120,12 +120,16 @@ export class ClickUpAPI {
     
     const customFields = [];
     
-    if (isValidForCustomField(ticket.id)) {
-      customFields.push({
-        id: "ticket_id",
-        value: `ticket-${Date.now()}` // Usando timestamp em vez do ID diretamente
-      });
-    }
+    // Gerar um ID personalizado único para o campo personalizado
+    // Usamos um formato sem caracteres especiais para evitar problemas
+    const safeTicketId = `tk_${Date.now()}${Math.floor(Math.random() * 1000)}`;
+    
+    console.log(`[ClickUp] Gerando ID personalizado para ticket: ${safeTicketId}`);
+    customFields.push({
+      id: "0",  // Colocamos um valor padrão para garantir que seja aceito
+      name: "ticket_id",
+      value: safeTicketId
+    });
 
     // Determinar a prioridade corretamente
     let priority = priorityMap.medium; // Valor padrão
@@ -183,26 +187,21 @@ export class ClickUpAPI {
     }
     
     console.log(`Enviando requisição para criar tarefa: ${CLICKUP_API_BASE}/list/${listId}/task`);
-    console.log("Dados da tarefa:", {
-      name: ticket.title || ticket.name,
+    const requestData = {
+      name: ticket.title || ticket.name || "Novo Ticket",
       description: ticket.description || "Sem descrição",
       priority: priority,
       due_date: dueDate,
-      status: status,
-      custom_fields: customFields
-    });
+      status: status
+      // Removendo o campo custom_fields da requisição para evitar erros
+    };
+    
+    console.log("Dados da tarefa a serem enviados:", JSON.stringify(requestData));
 
     try {
       const response = await this.request(`/list/${listId}/task`, {
         method: 'POST',
-        body: JSON.stringify({
-          name: ticket.title || ticket.name || "Novo Ticket",
-          description: ticket.description || "Sem descrição",
-          priority: priority,
-          due_date: dueDate,
-          status: status,
-          custom_fields: customFields
-        })
+        body: JSON.stringify(requestData)
       });
       
       console.log("Resposta da criação de tarefa:", response);
@@ -228,6 +227,8 @@ export class ClickUpAPI {
           if (errorMessage.includes('Status')) {
             throw new Error(`Erro 400: Problema com o status. O status "${status}" não existe na lista do ClickUp. ` +
                           `Crie os status ABERTO, EM ANDAMENTO, RESOLVIDO e FECHADO na sua lista do ClickUp.`);
+          } else if (errorMessage.includes('Field is must be a valid UUID')) {
+            throw new Error(`Erro 400: Problema com o campo personalizado. O ID do campo personalizado deve ser um UUID válido. Verifique a configuração dos campos personalizados no ClickUp.`);
           } else {
             throw new Error(`Erro 400: Requisição inválida. Verifique os dados enviados e a configuração do ClickUp. ${errorMessage}`);
           }
@@ -239,12 +240,82 @@ export class ClickUpAPI {
 
   // Atualiza o status de uma tarefa
   async updateTaskStatus(taskId: string, status: string) {
-    return this.request(`/task/${taskId}`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        status
-      })
-    });
+    console.log(`[ClickUpAPI] Atualizando status da tarefa ${taskId} para "${status}"`);
+    
+    try {
+      // Primeiro, vamos verificar se conseguimos obter a tarefa
+      try {
+        console.log(`[ClickUpAPI] Verificando se a tarefa ${taskId} existe antes de atualizar status`);
+        const task: any = await this.request(`/task/${taskId}`);
+        console.log(`[ClickUpAPI] Tarefa encontrada:`, task?.name || 'Nome não disponível');
+        
+        // Se a tarefa existe, vamos obter a lista para verificar os status disponíveis
+        if (task && task.list && task.list.id) {
+          console.log(`[ClickUpAPI] Verificando status disponíveis na lista ${task.list.id}`);
+          const listData: any = await this.request(`/list/${task.list.id}`);
+          
+          if (listData && listData.statuses && Array.isArray(listData.statuses)) {
+            const availableStatuses = listData.statuses.map((s: any) => s.status);
+            console.log(`[ClickUpAPI] Status disponíveis na lista:`, availableStatuses);
+            
+            // Verificar se o status existe exatamente como passado
+            if (!availableStatuses.includes(status)) {
+              console.log(`[ClickUpAPI] Status "${status}" não encontrado. Verificando status em caso insensitivo.`);
+              
+              // Verificar sem considerar case sensitive
+              const statusLowerCase = status.toLowerCase();
+              const matchingStatus = availableStatuses.find(s => s.toLowerCase() === statusLowerCase);
+              
+              if (matchingStatus) {
+                console.log(`[ClickUpAPI] Status encontrado com case diferente: "${matchingStatus}". Usando este status.`);
+                status = matchingStatus;
+              } else {
+                console.error(`[ClickUpAPI] ERRO: Status "${status}" não está na lista de status disponíveis!`);
+                console.error(`[ClickUpAPI] Você deve criar este status exatamente com este nome no ClickUp: "${status}"`);
+                
+                throw new Error(`Status "${status}" não encontrado na lista do ClickUp. Status disponíveis: ${availableStatuses.join(', ')}`);
+              }
+            }
+          }
+        }
+      } catch (checkError) {
+        console.error(`[ClickUpAPI] Erro ao verificar tarefa/status antes de atualizar:`, checkError);
+        // Continuamos mesmo se não conseguirmos verificar previamente
+      }
+      
+      // Agora tentamos realmente atualizar o status
+      console.log(`[ClickUpAPI] Enviando requisição para atualizar status para "${status}"`);
+      const response = await this.request(`/task/${taskId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          status
+        })
+      });
+      
+      console.log(`[ClickUpAPI] Status da tarefa ${taskId} atualizado com sucesso para "${status}"`);
+      return response;
+    } catch (error) {
+      console.error(`[ClickUpAPI] Erro ao atualizar status da tarefa ${taskId}:`, error);
+      
+      if (error instanceof Error) {
+        if (error.message.includes('Status not found')) {
+          console.error(`[ClickUpAPI] Erro: Status "${status}" não encontrado na lista do ClickUp`);
+          console.error('[ClickUpAPI] Verifique se os status exatos existem no ClickUp e têm a mesma grafia:');
+          console.error(`[ClickUpAPI] 1. Acesse a lista no ClickUp`);
+          console.error(`[ClickUpAPI] 2. Verifique os status disponíveis`);
+          console.error(`[ClickUpAPI] 3. Certifique-se que os status ABERTO, EM ANDAMENTO, RESOLVIDO, FECHADO existem`);
+          
+          // Erro mais detalhado para o cliente
+          throw new Error(
+            `O status "${status}" não existe na lista configurada no ClickUp. ` +
+            `Verifique se você tem exatamente estes status criados na sua lista no ClickUp: ` +
+            `ABERTO, EM ANDAMENTO, RESOLVIDO, FECHADO`
+          );
+        }
+      }
+      
+      throw error;
+    }
   }
 
   // Atualiza os campos de uma tarefa

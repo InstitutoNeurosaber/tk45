@@ -24,7 +24,6 @@ import { CommentsPage } from './pages/Comments';
 import { DiaryPage } from './pages/Diary';
 import { ProfilePage } from './components/ProfilePage';
 import type { Ticket, TicketStatus, TicketPriority, TicketCategory } from './types/ticket';
-import { ComentarioWebhookTeste } from './components/ComentarioWebhookTeste';
 
 function MainContent() {
   const navigate = useNavigate();
@@ -305,10 +304,6 @@ if (loading && !toast.isActive(TOAST_ID)) {
           onStatusChange={handleStatusChange}
           onUpdate={handleTicketUpdate}
         />
-      )}
-
-      {user && userData?.role === 'admin' && (
-        <ComentarioWebhookTeste />
       )}
     </>
           )}

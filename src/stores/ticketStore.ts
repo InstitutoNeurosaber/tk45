@@ -5,6 +5,7 @@ import { ClickUpAPI } from '../lib/clickup';
 import { db } from '../lib/firebase';
 import { ticketService } from '../services/ticketService';
 import type { Ticket, TicketStatus, TicketPriority, Comment } from '../types/ticket';
+import { clickupStatusSync } from '../services/clickup/statusSync';
 
 interface TicketState {
   tickets: Ticket[];
@@ -159,44 +160,21 @@ export const useTicketStore = create<TicketState>((set, get) => ({
   },
 
   updateTicketStatus: async (ticketId: string, status: TicketStatus) => {
-    const previousTickets = get().tickets;
-    const now = new Date();
-    const currentTicket = get().tickets.find(t => t.id === ticketId);
-    
-    if (!currentTicket) {
-      throw new Error('Ticket não encontrado');
-    }
-    
     try {
-      // Atualização otimista
-      set(state => ({
-        tickets: state.tickets.map(t => 
-          t.id === ticketId ? { ...t, status, updatedAt: now } : t
-        )
-      }));
-
-      // Atualizar no backend
-      await ticketService.updateTicket(ticketId, {
-        status,
-        updatedAt: now
-      });
+      console.log(`[TicketStore] Solicitando atualização de status do ticket ${ticketId} para ${status}`);
       
-      // Sincronizar com ClickUp se configurado
-      try {
-        await clickupService.isConfigured().then(async (isConfigured) => {
-          if (isConfigured) {
-            console.log("ClickUp configurado, sincronizando status do ticket");
-            const updatedTicket = { ...currentTicket, status, updatedAt: now };
-            await clickupService.syncTicketWithClickUp(updatedTicket);
-          }
-        });
-      } catch (syncError) {
-        console.error("Erro ao sincronizar status com ClickUp:", syncError);
-        // Não reverte a atualização do ticket se a sincronização falhar
+      // Usamos o serviço de sincronização que cuida de toda a lógica de atualização
+      // incluindo controle de duplicação, atualização no sistema e propagação para o ClickUp
+      const success = await clickupStatusSync.updateSystemStatus(ticketId, status);
+      
+      if (!success) {
+        console.error(`[TicketStore] Falha ao atualizar status do ticket ${ticketId}`);
+        throw new Error('Falha ao atualizar status');
       }
+      
+      return; // Sucesso
     } catch (error) {
-      // Reverter em caso de erro
-      set({ tickets: previousTickets });
+      console.error(`[TicketStore] Erro ao atualizar status do ticket ${ticketId}:`, error);
       throw error;
     }
   },
@@ -272,16 +250,23 @@ export const useTicketStore = create<TicketState>((set, get) => ({
       const ticket = get().tickets.find(t => t.id === ticketId);
       if (ticket?.taskId) {
         try {
+          console.log(`[TicketStore] Ticket ${ticketId} tem taskId ${ticket.taskId}, verificando integração ClickUp`);
           await clickupService.isConfigured().then(async (isConfigured) => {
             if (isConfigured) {
-              console.log("ClickUp configurado, adicionando comentário à tarefa");
-              await clickupService.addComment(ticket.taskId as string, newComment);
+              console.log(`[TicketStore] ClickUp configurado, adicionando comentário à tarefa ${ticket.taskId}`);
+              // Garantir que taskId não é undefined
+              const clickupTaskId = ticket.taskId as string;
+              await clickupService.addComment(clickupTaskId, newComment);
+            } else {
+              console.log('[TicketStore] ClickUp não está configurado, pulando sincronização de comentário');
             }
           });
         } catch (syncError) {
-          console.error("Erro ao adicionar comentário no ClickUp:", syncError);
+          console.error("[TicketStore] Erro ao adicionar comentário no ClickUp:", syncError);
           // Não falha a adição do comentário se a sincronização falhar
         }
+      } else {
+        console.log(`[TicketStore] Ticket ${ticketId} não tem taskId associado, pulando sincronização ClickUp`);
       }
 
       return newComment;
