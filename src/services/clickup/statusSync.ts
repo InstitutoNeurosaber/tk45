@@ -77,7 +77,7 @@ export class ClickUpStatusSync {
    */
   async updateSystemStatus(ticketId: string, status: TicketStatus): Promise<boolean> {
     try {
-      console.log(`[ClickUpStatusSync] Atualizando status do ticket ${ticketId} para ${status}`);
+      console.log(`[ClickUpStatusSync] ⚠️ INICIANDO atualização de status do ticket ${ticketId} para ${status}`);
       
       // Buscar o ticket atual
       const ticket = await ticketService.getTicket(ticketId);
@@ -85,6 +85,13 @@ export class ClickUpStatusSync {
         console.error(`[ClickUpStatusSync] Ticket ${ticketId} não encontrado`);
         return false;
       }
+      
+      console.log(`[ClickUpStatusSync] Ticket encontrado:`, JSON.stringify({
+        id: ticket.id,
+        title: ticket.title,
+        status: ticket.status,
+        taskId: ticket.taskId
+      }));
       
       // Se não tiver taskId, não há necessidade de verificar duplicação
       if (!ticket.taskId) {
@@ -109,12 +116,17 @@ export class ClickUpStatusSync {
       });
       
       // Atualizar o status no sistema
+      console.log(`[ClickUpStatusSync] Atualizando status no sistema para ${status}`);
       await ticketService.updateTicket(ticketId, { status });
+      console.log(`[ClickUpStatusSync] Status atualizado no sistema com sucesso`);
       
       // Propagar para o ClickUp com marcação de origem
+      console.log(`[ClickUpStatusSync] Verificando configuração do ClickUp...`);
       const isConfigured = await clickupService.isConfigured();
+      console.log(`[ClickUpStatusSync] ClickUp configurado: ${isConfigured}`);
+      
       if (isConfigured && ticket.taskId) {
-        console.log(`[ClickUpStatusSync] ClickUp configurado, propagando mudança para o ClickUp`);
+        console.log(`[ClickUpStatusSync] ⚠️ ClickUp configurado, propagando mudança para o ClickUp. TaskId: ${ticket.taskId}`);
         
         // Criar um objeto ticket atualizado para sincronização
         const updatedTicket: Ticket = {
@@ -122,18 +134,28 @@ export class ClickUpStatusSync {
           status
         };
         
+        console.log(`[ClickUpStatusSync] Iniciando sincronização com ClickUp para status: ${status}`);
         // Adicionar marcação de origem na sincronização
-        await clickupService.syncTicketWithClickUp(updatedTicket, { 
-          source: 'ticket-system',
-          skipWebhookUpdate: true
-        });
-        
-        console.log(`[ClickUpStatusSync] Status propagado com sucesso para o ClickUp`);
+        try {
+          const resultado = await clickupService.syncTicketWithClickUp(updatedTicket, { 
+            source: 'ticket-system',
+            skipWebhookUpdate: true
+          });
+          console.log(`[ClickUpStatusSync] Resultado da sincronização:`, resultado);
+          console.log(`[ClickUpStatusSync] Status propagado com sucesso para o ClickUp`);
+        } catch (syncError) {
+          console.error(`[ClickUpStatusSync] ❌ Erro na sincronização com ClickUp:`, syncError);
+          console.error(`[ClickUpStatusSync] Detalhes do erro:`, syncError instanceof Error ? syncError.message : 'Erro desconhecido');
+          // Não falhar completamente, já que o status no sistema foi atualizado
+        }
+      } else {
+        console.log(`[ClickUpStatusSync] Não foi possível propagar para ClickUp. isConfigured: ${isConfigured}, taskId: ${ticket.taskId}`);
       }
       
       return true;
     } catch (error) {
-      console.error(`[ClickUpStatusSync] Erro ao atualizar status no sistema:`, error);
+      console.error(`[ClickUpStatusSync] ❌ Erro ao atualizar status no sistema:`, error);
+      console.error(`[ClickUpStatusSync] Detalhes do erro:`, error instanceof Error ? error.message : 'Erro desconhecido');
       return false;
     }
   }

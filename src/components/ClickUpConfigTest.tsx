@@ -3,7 +3,8 @@ import { clickupService } from '../services/clickupService';
 import { useAuthStore } from '../stores/authStore';
 import { useClickUpStore } from '../stores/clickupStore';
 import { ClickUpAPI } from '../lib/clickup';
-import { Loader2, CheckCircle, XCircle, AlertCircle, Trash2, RefreshCw } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, AlertCircle, Trash2, RefreshCw, Check } from 'lucide-react';
+import type { Ticket, TicketStatus } from '../types/ticket';
 
 // Status que devem ser testados
 const STATUS_OPTIONS = [
@@ -12,6 +13,11 @@ const STATUS_OPTIONS = [
   { value: 'resolved', label: 'Resolvido', clickupStatus: 'RESOLVIDO' },
   { value: 'closed', label: 'Fechado', clickupStatus: 'FECHADO' }
 ];
+
+interface ListResponse {
+  statuses?: Array<{ status: string }>;
+  [key: string]: any;
+}
 
 export function ClickUpConfigTest() {
   const { user } = useAuthStore();
@@ -26,7 +32,13 @@ export function ClickUpConfigTest() {
   const [loadingStatus, setLoadingStatus] = useState<string | null>(null);
   const [statusAvailability, setStatusAvailability] = useState<Record<string, boolean>>({});
   const [deleteResult, setDeleteResult] = useState<{ success?: boolean; message: string } | null>(null);
-  
+  const [loading, setLoading] = useState(false);
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    message: string;
+    statusMap?: Record<string, string>;
+  } | null>(null);
+
   // Verificar se o ClickUp está configurado
   useEffect(() => {
     const checkConfiguration = async () => {
@@ -53,87 +65,171 @@ export function ClickUpConfigTest() {
   
   // Verifica quais status estão disponíveis no ClickUp
   const checkAvailableStatuses = async () => {
-    if (!config || !config.apiKey || !config.listId) return;
+    setLoading(true);
+    setTestResult(null);
     
     try {
-      setIsLoading(true);
-      setMessage('Verificando status disponíveis no ClickUp...');
-      setMessageType('info');
+      console.log('[ClickUpConfigTest] Iniciando verificação de status disponíveis');
       
-      // Obter API do ClickUp
-      const api = await clickupService['getAPI']();
-      
-      console.log(`[ClickUpConfigTest] Verificando status na lista ${config.listId}`);
-      
-      // Tentar obter os status diretamente do ClickUp
-      try {
-        const response = await fetch(`https://api.clickup.com/api/v2/list/${config.listId}`, {
-          headers: {
-            'Authorization': config.apiKey,
-            'Content-Type': 'application/json'
-          }
+      // Verifica se o ClickUp está configurado
+      const isConfigured = await clickupService.isConfigured();
+      if (!isConfigured) {
+        setTestResult({
+          success: false,
+          message: 'ClickUp não está configurado. Configure o ClickUp primeiro.'
         });
+        setLoading(false);
+        return;
+      }
+      
+      // Obter a configuração através de método seguro
+      const listId = await getClickUpListId();
+      
+      if (!listId) {
+        setTestResult({
+          success: false,
+          message: 'Configuração incompleta. ID da lista não configurado.'
+        });
+        setLoading(false);
+        return;
+      }
+      
+      console.log(`[ClickUpConfigTest] Verificando lista ${listId}`);
+      
+      // Buscar detalhes da lista para obter os status disponíveis
+      try {
+        // Usar fetch direto para acessar API do ClickUp através de função Netlify
+        const listData = await fetch(`/.netlify/functions/clickup-proxy`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            endpoint: `/list/${listId}`,
+            method: 'GET'
+          })
+        }).then(res => res.json()) as ListResponse;
         
-        if (!response.ok) {
-          throw new Error(`Erro ao obter lista: ${response.status}`);
-        }
-        
-        const listData = await response.json();
+        console.log('[ClickUpConfigTest] Dados da lista:', listData);
         
         if (listData && listData.statuses && Array.isArray(listData.statuses)) {
-          const availableStatuses = listData.statuses.map((s: any) => s.status);
-          console.log('[ClickUpConfigTest] Status disponíveis na lista:', availableStatuses);
+          const availableStatuses = listData.statuses.map((s) => s.status);
+          console.log('[ClickUpConfigTest] Status disponíveis:', availableStatuses);
           
-          // Verificar quais dos status necessários estão disponíveis
-          const statusCheck: Record<string, boolean> = {};
+          // Status que devem existir no ClickUp para o funcionamento da integração
+          const requiredStatuses = ['ABERTO', 'EM ANDAMENTO', 'RESOLVIDO', 'FECHADO'];
           
-          STATUS_OPTIONS.forEach(option => {
-            statusCheck[option.value] = availableStatuses.includes(option.clickupStatus);
+          // Verificar se todos os status necessários estão disponíveis
+          const missingStatuses = requiredStatuses.filter(status => 
+            !availableStatuses.some(s => s.toUpperCase() === status)
+          );
+          
+          // Criar um mapeamento visual dos status
+          const statusMap: Record<string, string> = {};
+          availableStatuses.forEach((status: string) => {
+            const matchedRequired = requiredStatuses.find(req => 
+              status.toUpperCase() === req || status.toUpperCase().includes(req)
+            );
+            
+            if (matchedRequired) {
+              statusMap[matchedRequired] = '✓ ' + status;
+            }
           });
           
-          setStatusAvailability(statusCheck);
-          
-          // Verificar se há status faltando
-          const missingStatuses = STATUS_OPTIONS.filter(option => !statusCheck[option.value])
-            .map(option => option.clickupStatus);
+          requiredStatuses.forEach(req => {
+            if (!statusMap[req]) {
+              statusMap[req] = '✕ Não encontrado';
+            }
+          });
           
           if (missingStatuses.length > 0) {
-            setMessage(`ATENÇÃO: Os seguintes status estão faltando no ClickUp: ${missingStatuses.join(', ')}. Crie-os para garantir que os testes funcionem corretamente.`);
-            setMessageType('warning');
+            setTestResult({
+              success: false,
+              message: `Atenção: Os seguintes status estão faltando na lista do ClickUp: ${missingStatuses.join(', ')}. ` +
+                     `Você precisa criar estes status exatamente com estes nomes para que a sincronização funcione corretamente. ` +
+                     `Status encontrados: ${availableStatuses.join(', ')}`,
+              statusMap
+            });
           } else {
-            setMessage('Todos os status necessários estão configurados no ClickUp! Você pode realizar os testes de mudança de status e exclusão de tarefas.');
-            setMessageType('success');
+            setTestResult({
+              success: true,
+              message: `Lista verificada com sucesso! Todos os status necessários foram encontrados: ${requiredStatuses.join(', ')}`,
+              statusMap
+            });
           }
         } else {
-          throw new Error('Formato de resposta inválido da API do ClickUp');
+          throw new Error('Formato de resposta inesperado');
         }
-      } catch (error) {
-        console.error('[ClickUpConfigTest] Erro ao obter status da lista:', error);
+      } catch (listError) {
+        console.error('[ClickUpConfigTest] Erro ao obter detalhes da lista:', listError);
         
-        // Supondo que os status existem conforme informado pelo usuário
-        setMessage('Usando status: ABERTO, EM ANDAMENTO, RESOLVIDO, FECHADO que já estão configurados no ClickUp.');
-        setMessageType('success');
-        
-        // Definir todos os status como disponíveis
-        const statusCheck: Record<string, boolean> = {};
-        STATUS_OPTIONS.forEach(option => {
-          statusCheck[option.value] = true;
+        // Assumir que os status existem, mas permitir que o usuário seja informado
+        setTestResult({
+          success: true,
+          message: 'Não foi possível verificar os status, mas assumindo que existem. Verifique manualmente se você tem os status: ABERTO, EM ANDAMENTO, RESOLVIDO e FECHADO.'
         });
-        setStatusAvailability(statusCheck);
       }
     } catch (error) {
       console.error('[ClickUpConfigTest] Erro ao verificar status:', error);
-      setMessage('Assumindo que os status ABERTO, EM ANDAMENTO, RESOLVIDO, FECHADO já existem no ClickUp conforme informado.');
-      setMessageType('info');
-      
-      // Definir todos os status como disponíveis
-      const statusCheck: Record<string, boolean> = {};
-      STATUS_OPTIONS.forEach(option => {
-        statusCheck[option.value] = true;
+      setTestResult({
+        success: false,
+        message: error instanceof Error 
+          ? error.message 
+          : 'Erro ao verificar status. Verifique o console para mais detalhes.'
       });
-      setStatusAvailability(statusCheck);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
+    }
+  };
+  
+  // Funções auxiliares para obter informações de configuração do ClickUp
+  const getClickUpApiKey = async (): Promise<string> => {
+    try {
+      // Usar método isConfigured para verificar se está configurado
+      const isConfigured = await clickupService.isConfigured();
+      if (!isConfigured) {
+        throw new Error('ClickUp não está configurado');
+      }
+      
+      // Buscar APIKey de forma segura através do ambiente
+      // Esta é uma abordagem alternativa já que não podemos acessar getConfig diretamente
+      return await fetch('/.netlify/functions/get-clickup-config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (!data.apiKey) {
+          throw new Error('API Key não encontrada');
+        }
+        return data.apiKey;
+      });
+    } catch (error) {
+      console.error('Erro ao obter API Key:', error);
+      throw error;
+    }
+  };
+  
+  const getClickUpListId = async (): Promise<string> => {
+    try {
+      return await fetch('/.netlify/functions/get-clickup-config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (!data.listId) {
+          throw new Error('List ID não encontrado');
+        }
+        return data.listId;
+      });
+    } catch (error) {
+      console.error('Erro ao obter List ID:', error);
+      throw error;
     }
   };
   
@@ -310,162 +406,192 @@ export function ClickUpConfigTest() {
     }
   };
   
+  const simulateStatusChange = async (status: TicketStatus) => {
+    setLoading(true);
+    
+    try {
+      console.log(`[ClickUpConfigTest] Simulando mudança de status para: ${status}`);
+      
+      // Obter um ticket de teste ou o primeiro ticket disponível
+      const tickets = await getAllTickets();
+      
+      if (!tickets || tickets.length === 0) {
+        setTestResult({
+          success: false,
+          message: 'Nenhum ticket encontrado para teste. Crie um ticket primeiro.'
+        });
+        setLoading(false);
+        return;
+      }
+      
+      // Usar o primeiro ticket com taskId
+      const testTicket = tickets.find(t => t.taskId);
+      
+      if (!testTicket) {
+        setTestResult({
+          success: false,
+          message: 'Nenhum ticket com taskId encontrado. Sincronize um ticket com o ClickUp primeiro.'
+        });
+        setLoading(false);
+        return;
+      }
+      
+      // Simular mudança de status
+      console.log(`[ClickUpConfigTest] Teste com ticket ${testTicket.id} (taskId: ${testTicket.taskId})`);
+      
+      // Atualizar o status
+      const updatedTicket = { ...testTicket, status };
+      
+      try {
+        await clickupService.syncTicketWithClickUp(updatedTicket, {
+          source: 'status-test',
+          skipWebhookUpdate: false
+        });
+        
+        setTestResult({
+          success: true,
+          message: `Status do ticket ${testTicket.id} atualizado com sucesso para ${status}!`
+        });
+      } catch (syncError) {
+        setTestResult({
+          success: false,
+          message: syncError instanceof Error
+            ? `Erro ao atualizar status: ${syncError.message}`
+            : 'Erro desconhecido ao atualizar status'
+        });
+      }
+    } catch (error) {
+      console.error('[ClickUpConfigTest] Erro ao simular mudança de status:', error);
+      setTestResult({
+        success: false,
+        message: error instanceof Error
+          ? error.message
+          : 'Erro ao simular mudança de status'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Função para obter todos os tickets
+  const getAllTickets = async (): Promise<Ticket[]> => {
+    try {
+      // Podemos usar o fetch para a API Netlify
+      return await fetch('/.netlify/functions/list-tickets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (!data.tickets || !Array.isArray(data.tickets)) {
+          return [];
+        }
+        return data.tickets;
+      });
+    } catch (error) {
+      console.error('Erro ao obter tickets:', error);
+      return [];
+    }
+  };
+
   return (
-    <div className="bg-white p-6 rounded-lg shadow">
-      <h2 className="text-lg font-medium text-gray-900 mb-4">Teste de Integração com ClickUp</h2>
-      
-      {/* Mensagem principal */}
-      {message && (
-        <div className={`p-4 mb-4 rounded-md ${
-          messageType === 'success' ? 'bg-green-50 text-green-800' :
-          messageType === 'error' ? 'bg-red-50 text-red-800' :
-          messageType === 'warning' ? 'bg-yellow-50 text-yellow-800' :
-          'bg-blue-50 text-blue-800'
-        }`}>
-          <div className="flex">
-            <div className="flex-shrink-0">
-              {messageType === 'success' && <CheckCircle className="h-5 w-5 text-green-400" />}
-              {messageType === 'error' && <XCircle className="h-5 w-5 text-red-400" />}
-              {messageType === 'warning' && <AlertCircle className="h-5 w-5 text-yellow-400" />}
-              {messageType === 'info' && <AlertCircle className="h-5 w-5 text-blue-400" />}
-            </div>
-            <div className="ml-3">
-              <p>{message}</p>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Configuração e opções de teste */}
+    <div className="mb-6 border rounded-lg p-4 shadow-sm">
+      <div className="pb-4 border-b mb-4">
+        <h2 className="text-xl font-semibold">Teste de Configuração do ClickUp</h2>
+      </div>
       <div className="space-y-4">
         <div>
-          <label htmlFor="taskId" className="block text-sm font-medium text-gray-700">
-            ID da Tarefa no ClickUp
-          </label>
-          <div className="mt-1 flex rounded-md shadow-sm">
-            <input
-              type="text"
-              id="taskId"
-              value={taskId}
-              onChange={(e) => setTaskId(e.target.value)}
-              className="flex-1 min-w-0 block w-full px-3 py-2 rounded-md border border-gray-300 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Informe o ID da tarefa para testar"
-              disabled={isLoading}
-            />
-            <button
-              type="button"
-              onClick={createTestTask}
-              className="ml-3 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-              disabled={isLoading || !isConfigured}
-            >
-              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              <span className="ml-2">Criar Nova Tarefa de Teste</span>
-            </button>
-          </div>
-          {ticketId && (
-            <p className="mt-1 text-sm text-gray-500">
-              ID do Ticket associado: {ticketId}
-            </p>
-          )}
+          <h3 className="text-md font-medium mb-2">1. Verificar Status Disponíveis</h3>
+          <p className="text-sm text-gray-600 mb-3">
+            Verifica se todos os status necessários existem no ClickUp.
+            Para a sincronização funcionar corretamente, você precisa criar os seguintes status no ClickUp:
+            <span className="font-semibold"> ABERTO, EM ANDAMENTO, RESOLVIDO</span> e <span className="font-semibold">FECHADO</span>.
+          </p>
+          <button 
+            onClick={checkAvailableStatuses} 
+            disabled={loading}
+            className="mb-3 px-4 py-2 bg-blue-500 text-white rounded disabled:bg-blue-300 flex items-center"
+          >
+            {loading ? <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> : <Check className="mr-2 h-4 w-4" />}
+            Verificar Status
+          </button>
         </div>
         
-        {/* Testes de status */}
-        <div className="mt-6">
-          <h3 className="text-md font-medium text-gray-900 mb-2">Testes de Mudança de Status</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {STATUS_OPTIONS.map((option) => (
-              <div 
-                key={option.value} 
-                className={`p-4 border rounded-md ${
-                  statusAvailability[option.value] === false 
-                    ? 'border-red-300 bg-red-50' 
-                    : 'border-gray-300'
-                }`}
-              >
-                <div className="flex justify-between items-center mb-2">
-                  <span className="font-medium">{option.label}</span>
-                  {statusAvailability[option.value] === false && (
-                    <span className="text-xs text-red-600">Status não configurado no ClickUp</span>
-                  )}
-                </div>
-                <p className="text-sm text-gray-500 mb-2">
-                  Status no ClickUp: <span className="font-mono">{option.clickupStatus}</span>
+        {testResult && (
+          <div className={`p-4 rounded-md border ${testResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+            <div className="flex items-start">
+              {testResult.success ? (
+                <Check className="h-5 w-5 text-green-500 mr-2 mt-0.5" />
+              ) : (
+                <XCircle className="h-5 w-5 text-red-500 mr-2 mt-0.5" />
+              )}
+              <div>
+                <p className={`text-sm ${testResult.success ? 'text-green-800' : 'text-red-800'}`}>
+                  {testResult.message}
                 </p>
-                <button
-                  type="button"
-                  onClick={() => testStatus(option.value, option.clickupStatus)}
-                  className="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                  disabled={isLoading || loadingStatus !== null || !taskId || statusAvailability[option.value] === false}
-                >
-                  {loadingStatus === option.value ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                  )}
-                  Mudar para {option.label}
-                </button>
                 
-                {statusTestResults[option.value] && (
-                  <div className={`mt-2 p-2 text-sm rounded ${
-                    statusTestResults[option.value].success 
-                      ? 'bg-green-50 text-green-800' 
-                      : 'bg-red-50 text-red-800'
-                  }`}>
-                    {statusTestResults[option.value].message}
+                {testResult.statusMap && (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {Object.entries(testResult.statusMap).map(([status, result]) => (
+                      <div key={status} className="flex items-center">
+                        <span className={`mr-2 px-2 py-0.5 rounded text-xs ${result.includes('✓') ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                          {status}
+                        </span>
+                        <span className="text-xs">
+                          {result}
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
-            ))}
+            </div>
           </div>
-        </div>
+        )}
         
-        {/* Teste de exclusão */}
-        <div className="mt-6">
-          <h3 className="text-md font-medium text-gray-900 mb-2">Teste de Exclusão de Tarefa</h3>
-          <div className="p-4 border border-gray-300 rounded-md">
-            <p className="text-sm text-gray-500 mb-4">
-              Este teste excluirá permanentemente a tarefa do ClickUp. Recomendado apenas para tarefas de teste.
-            </p>
-            <button
-              type="button"
-              onClick={testDeleteTask}
-              className="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
-              disabled={isLoading || !taskId}
+        <div className="pt-4 border-t border-gray-200 mt-6">
+          <h3 className="text-md font-medium mb-2">2. Testar Mudança de Status</h3>
+          <p className="text-sm text-gray-600 mb-3">
+            Simula mudanças de status para verificar a integração com o ClickUp.
+            Selecione um status para testar a atualização em um ticket existente.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <button 
+              onClick={() => simulateStatusChange('open')}
+              disabled={loading}
+              className="px-3 py-2 border rounded flex items-center justify-start hover:bg-gray-50"
             >
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              ) : (
-                <Trash2 className="h-4 w-4 mr-2" />
-              )}
-              Excluir Tarefa
+              <span className="bg-red-100 text-red-800 px-2 py-0.5 rounded text-xs mr-2">ABERTO</span>
             </button>
             
-            {deleteResult && (
-              <div className={`mt-2 p-2 text-sm rounded ${
-                deleteResult.success 
-                  ? 'bg-green-50 text-green-800' 
-                  : 'bg-red-50 text-red-800'
-              }`}>
-                {deleteResult.message}
-              </div>
-            )}
+            <button 
+              onClick={() => simulateStatusChange('in_progress')}
+              disabled={loading}
+              className="px-3 py-2 border rounded flex items-center justify-start hover:bg-gray-50"
+            >
+              <span className="bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded text-xs mr-2">EM ANDAMENTO</span>
+            </button>
+            
+            <button 
+              onClick={() => simulateStatusChange('resolved')}
+              disabled={loading}
+              className="px-3 py-2 border rounded flex items-center justify-start hover:bg-gray-50"
+            >
+              <span className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs mr-2">RESOLVIDO</span>
+            </button>
+            
+            <button 
+              onClick={() => simulateStatusChange('closed')}
+              disabled={loading}
+              className="px-3 py-2 border rounded flex items-center justify-start hover:bg-gray-50"
+            >
+              <span className="bg-green-100 text-green-800 px-2 py-0.5 rounded text-xs mr-2">FECHADO</span>
+            </button>
           </div>
         </div>
-      </div>
-      
-      <div className="mt-6 pt-6 border-t border-gray-200">
-        <h3 className="text-sm font-medium text-gray-900">Documentação dos Testes</h3>
-        <p className="mt-2 text-sm text-gray-500">
-          Para que os testes funcionem corretamente, você deve ter os seguintes status configurados na sua lista do ClickUp:
-        </p>
-        <ul className="mt-2 list-disc pl-5 text-sm text-gray-500">
-          {STATUS_OPTIONS.map((option) => (
-            <li key={option.value}>
-              <strong>{option.clickupStatus}</strong>: Status correspondente a "{option.label}" no sistema
-            </li>
-          ))}
-        </ul>
       </div>
     </div>
   );
-} 
+}

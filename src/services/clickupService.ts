@@ -314,52 +314,59 @@ export class ClickUpService {
   }
 
   /**
-   * Mapeia os status do sistema para os status no ClickUp
-   * @param status Status do sistema 
+   * Mapeia o status do sistema para o ClickUp
+   * @param status Status do sistema de tickets
    * @returns Status equivalente no ClickUp
    */
   mapStatus(status: TicketStatus): string {
-    console.log(`[ClickUpService] Mapeando status do sistema: ${status}`);
+    console.log(`[ClickUpService] Mapeando status do sistema: ${status} para ClickUp`);
     
-    // Mapeamento de status do sistema para o ClickUp
-    // Importante: usar exatamente os nomes de status configurados no ClickUp
+    // Mapeamento de status do sistema para o ClickUp (exatamente com esses nomes)
+    let clickupStatus: string;
+    
     switch (status) {
       case 'open':
-        return 'ABERTO';
+        clickupStatus = 'ABERTO';
+        break;
       case 'in_progress':
-        return 'EM ANDAMENTO';
+        clickupStatus = 'EM ANDAMENTO';
+        break;
       case 'resolved':
-        return 'RESOLVIDO';
+        clickupStatus = 'RESOLVIDO';
+        break;
       case 'closed':
-        return 'FECHADO';
+        clickupStatus = 'FECHADO';
+        break;
       default:
-        console.warn(`[ClickUpService] Status desconhecido: ${status}, usando status padrão 'ABERTO'`);
-        return 'ABERTO';
+        console.warn(`[ClickUpService] Status desconhecido: ${status}, usando ABERTO como padrão`);
+        clickupStatus = 'ABERTO';
     }
+    
+    console.log(`[ClickUpService] Status mapeado para ClickUp: ${clickupStatus}`);
+    return clickupStatus;
   }
 
   /**
-   * Mapeia os status do ClickUp para os status do sistema
+   * Mapeia o status do ClickUp para o sistema
    * @param clickupStatus Status do ClickUp
    * @returns Status equivalente no sistema
    */
   mapClickUpStatusToSystem(clickupStatus: string): TicketStatus {
-    console.log(`[ClickUpService] Mapeando status do ClickUp: ${clickupStatus}`);
+    console.log(`[ClickUpService] Mapeando status do ClickUp: ${clickupStatus} para o sistema`);
     
-    // Normalizar o status para comparação (sem case sensitive)
+    // Normalizar o status para facilitar a comparação (case insensitive)
     const normalizedStatus = clickupStatus.toUpperCase();
     
-    // Mapeamento de status do ClickUp para o sistema
-    if (normalizedStatus === 'ABERTO') {
+    if (normalizedStatus === 'ABERTO' || normalizedStatus.includes('TO DO')) {
       return 'open';
-    } else if (normalizedStatus === 'EM ANDAMENTO') {
+    } else if (normalizedStatus === 'EM ANDAMENTO' || normalizedStatus.includes('PROGRESS')) {
       return 'in_progress';
-    } else if (normalizedStatus === 'RESOLVIDO') {
+    } else if (normalizedStatus === 'RESOLVIDO' || normalizedStatus.includes('COMPLETE') || normalizedStatus.includes('DONE')) {
       return 'resolved';
-    } else if (normalizedStatus === 'FECHADO') {
+    } else if (normalizedStatus === 'FECHADO' || normalizedStatus.includes('CLOSED')) {
       return 'closed';
     } else {
-      console.warn(`[ClickUpService] Status do ClickUp desconhecido: ${clickupStatus}, mapeando para 'open'`);
+      console.warn(`[ClickUpService] Status do ClickUp não reconhecido: ${clickupStatus}, usando 'open' como padrão`);
       return 'open';
     }
   }

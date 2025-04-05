@@ -243,16 +243,16 @@ export class ClickUpAPI {
     console.log(`[ClickUpAPI] Atualizando status da tarefa ${taskId} para "${status}"`);
     
     try {
-      // Primeiro, vamos verificar se conseguimos obter a tarefa
+      // Primeiro, verificar se a tarefa existe e obter os status disponíveis
       try {
-        console.log(`[ClickUpAPI] Verificando se a tarefa ${taskId} existe antes de atualizar status`);
-        const task: any = await this.request(`/task/${taskId}`);
-        console.log(`[ClickUpAPI] Tarefa encontrada:`, task?.name || 'Nome não disponível');
+        // Obter a tarefa para ver qual é a lista
+        const taskData = await this.request(`/task/${taskId}`);
+        console.log(`[ClickUpAPI] Dados da tarefa recuperados. Liste ID: ${taskData.list.id}`);
         
-        // Se a tarefa existe, vamos obter a lista para verificar os status disponíveis
-        if (task && task.list && task.list.id) {
-          console.log(`[ClickUpAPI] Verificando status disponíveis na lista ${task.list.id}`);
-          const listData: any = await this.request(`/list/${task.list.id}`);
+        if (taskData && taskData.list && taskData.list.id) {
+          // Obter os status disponíveis para esta lista
+          const listData = await this.request(`/list/${taskData.list.id}`);
+          console.log(`[ClickUpAPI] Dados da lista recuperados. Status disponíveis: ${listData.statuses?.length || 0}`);
           
           if (listData && listData.statuses && Array.isArray(listData.statuses)) {
             const availableStatuses = listData.statuses.map((s: any) => s.status);
@@ -270,11 +270,26 @@ export class ClickUpAPI {
                 console.log(`[ClickUpAPI] Status encontrado com case diferente: "${matchingStatus}". Usando este status.`);
                 status = matchingStatus;
               } else {
-                console.error(`[ClickUpAPI] ERRO: Status "${status}" não está na lista de status disponíveis!`);
-                console.error(`[ClickUpAPI] Você deve criar este status exatamente com este nome no ClickUp: "${status}"`);
+                // Tentar uma correspondência mais flexível
+                console.log(`[ClickUpAPI] Tentando encontrar uma correspondência parcial para "${status}"`);
+                const partialMatch = availableStatuses.find(s => 
+                  s.toLowerCase().includes(statusLowerCase) || 
+                  statusLowerCase.includes(s.toLowerCase())
+                );
                 
-                throw new Error(`Status "${status}" não encontrado na lista do ClickUp. Status disponíveis: ${availableStatuses.join(', ')}`);
+                if (partialMatch) {
+                  console.log(`[ClickUpAPI] Correspondência parcial encontrada: "${partialMatch}". Usando este status.`);
+                  status = partialMatch;
+                } else {
+                  console.error(`[ClickUpAPI] ERRO: Status "${status}" não está na lista de status disponíveis!`);
+                  console.error(`[ClickUpAPI] Você deve criar este status exatamente com este nome no ClickUp: "${status}"`);
+                  console.error(`[ClickUpAPI] Status disponíveis: ${availableStatuses.join(', ')}`);
+                  
+                  throw new Error(`Status "${status}" não encontrado na lista do ClickUp. Status disponíveis: ${availableStatuses.join(', ')}`);
+                }
               }
+            } else {
+              console.log(`[ClickUpAPI] ✓ Status "${status}" encontrado entre os disponíveis.`);
             }
           }
         }
@@ -292,28 +307,10 @@ export class ClickUpAPI {
         })
       });
       
-      console.log(`[ClickUpAPI] Status da tarefa ${taskId} atualizado com sucesso para "${status}"`);
+      console.log(`[ClickUpAPI] Status atualizado com sucesso:`, response?.status);
       return response;
     } catch (error) {
-      console.error(`[ClickUpAPI] Erro ao atualizar status da tarefa ${taskId}:`, error);
-      
-      if (error instanceof Error) {
-        if (error.message.includes('Status not found')) {
-          console.error(`[ClickUpAPI] Erro: Status "${status}" não encontrado na lista do ClickUp`);
-          console.error('[ClickUpAPI] Verifique se os status exatos existem no ClickUp e têm a mesma grafia:');
-          console.error(`[ClickUpAPI] 1. Acesse a lista no ClickUp`);
-          console.error(`[ClickUpAPI] 2. Verifique os status disponíveis`);
-          console.error(`[ClickUpAPI] 3. Certifique-se que os status ABERTO, EM ANDAMENTO, RESOLVIDO, FECHADO existem`);
-          
-          // Erro mais detalhado para o cliente
-          throw new Error(
-            `O status "${status}" não existe na lista configurada no ClickUp. ` +
-            `Verifique se você tem exatamente estes status criados na sua lista no ClickUp: ` +
-            `ABERTO, EM ANDAMENTO, RESOLVIDO, FECHADO`
-          );
-        }
-      }
-      
+      console.error(`[ClickUpAPI] Erro ao atualizar status:`, error);
       throw error;
     }
   }
