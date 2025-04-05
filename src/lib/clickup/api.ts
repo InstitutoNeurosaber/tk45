@@ -17,46 +17,25 @@ export class ClickUpAPI {
     this.controller = new AbortController();
   }
 
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-    try {
-      const response = await fetch(`${CLICKUP_API_BASE}${endpoint}`, {
-        ...options,
-        signal: this.controller.signal,
-        headers: {
-          'Authorization': this.apiKey,
-          'Content-Type': 'application/json',
-          ...options.headers,
-        },
-      });
+  public async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const url = `${CLICKUP_API_BASE}${endpoint}`;
+    
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        'Authorization': this.apiKey,
+        'Content-Type': 'application/json',
+        ...options.headers
+      },
+      signal: this.controller.signal
+    });
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('API Key inválida. Verifique suas credenciais.');
-        }
-        if (response.status === 404) {
-          throw new Error('Recurso não encontrado. Verifique os IDs fornecidos.');
-        }
-        if (response.status === 429) {
-          throw new Error('Limite de requisições excedido. Aguarde um momento e tente novamente.');
-        }
-        const errorData = await response.json().catch(() => ({ err: 'Erro desconhecido' }));
-        throw new Error(errorData.err || `Erro ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          throw new Error('Requisição cancelada');
-        }
-        if (error.message.includes('Failed to fetch')) {
-          throw new Error('Não foi possível conectar à API do ClickUp. Verifique sua conexão e a API Key.');
-        }
-        throw error;
-      }
-      throw new Error('Erro desconhecido ao acessar a API do ClickUp');
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ err: 'Erro desconhecido' }));
+      throw new Error(errorData.err || `Erro na requisição: ${response.status} ${response.statusText}`);
     }
+
+    return response.json();
   }
 
   async validateApiKey(): Promise<boolean> {
@@ -108,11 +87,13 @@ export class ClickUpAPI {
   }
 
   async addComment(taskId: string, comment: Comment): Promise<void> {
+    const assignee = comment.userId ? parseInt(comment.userId) : null;
+    
     await this.request(`/task/${taskId}/comment`, {
       method: 'POST',
       body: JSON.stringify({
         comment_text: comment.content,
-        assignee: comment.userId,
+        assignee: assignee,
         notify_all: true
       })
     });
@@ -120,12 +101,14 @@ export class ClickUpAPI {
 
   async getComments(taskId: string): Promise<Comment[]> {
     const response = await this.request<{ comments: any[] }>(`/task/${taskId}/comment`);
+    
     return response.comments.map(comment => ({
       id: comment.id,
       content: comment.comment_text,
       userId: comment.user.id,
-      createdAt: new Date(comment.date),
-      ticketId: taskId
+      userName: comment.user.username,
+      ticketId: taskId,
+      createdAt: new Date(comment.date)
     }));
   }
 

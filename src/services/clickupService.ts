@@ -309,10 +309,48 @@ export class ClickUpService {
         throw new Error('Tarefa não encontrada no ClickUp');
       }
 
-      await api.addComment(ticketId, comment);
+      // Validação do ID do usuário
+      const commentToSend = { ...comment };
+      if (commentToSend.userId && isNaN(parseInt(commentToSend.userId))) {
+        console.warn('ID do usuário inválido para o ClickUp, removendo assignee');
+        commentToSend.userId = '';
+      }
+
+      await api.addComment(ticketId, commentToSend);
     } catch (error) {
       console.error('Erro ao adicionar comentário no ClickUp:', error);
       throw new Error('Erro ao adicionar comentário no ClickUp: ' + (error instanceof Error ? error.message : 'Erro desconhecido'));
+    }
+  }
+
+  async getComments(taskId: string): Promise<Comment[]> {
+    try {
+      const config = await this.getConfig();
+      if (!config) {
+        throw new Error('Configuração do ClickUp não encontrada');
+      }
+
+      const api = await this.getAPI();
+
+      // Verifica se a tarefa existe antes de tentar buscar comentários
+      const taskExists = await api.taskExists(taskId);
+      if (!taskExists) {
+        throw new Error('Tarefa não encontrada no ClickUp');
+      }
+
+      const comments = await api.getComments(taskId);
+      
+      return comments.map(comment => ({
+        id: comment.id,
+        content: comment.content,
+        userId: comment.userId,
+        userName: comment.userName,
+        ticketId: taskId,
+        createdAt: comment.createdAt
+      }));
+    } catch (error) {
+      console.error('Erro ao buscar comentários do ClickUp:', error);
+      throw new Error('Erro ao buscar comentários do ClickUp: ' + (error instanceof Error ? error.message : 'Erro desconhecido'));
     }
   }
 
