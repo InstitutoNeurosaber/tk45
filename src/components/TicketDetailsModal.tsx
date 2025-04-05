@@ -300,9 +300,9 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
   return (
     <>
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[85vh] overflow-hidden mb-8">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[85vh] flex flex-col overflow-hidden mb-8">
           {/* Cabeçalho */}
-          <div className="relative px-8 py-6 border-b border-gray-200">
+          <div className="relative px-8 py-6 border-b border-gray-200 flex-shrink-0">
             <div className="flex items-center justify-between">
               <div className="flex-1">
                 <h2 className="text-2xl font-bold text-gray-900 mb-3">{ticket.title}</h2>
@@ -422,12 +422,12 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
             </div>
           )}
 
-          {/* Conteúdo */}
-          <div className="flex h-[calc(90vh-180px)]">
+          {/* Conteúdo principal com layout de flexbox para evitar que o scroll afete o posicionamento */}
+          <div className="flex flex-1 overflow-hidden">
             {/* Coluna Principal - 65% */}
-            <div className="w-[65%] p-8 overflow-y-auto border-r border-gray-200">
+            <div className="w-[65%] p-8 overflow-y-auto border-r border-gray-200 flex flex-col">
               {/* Descrição */}
-              <div className="bg-white rounded-lg border border-gray-200 p-6 mb-8">
+              <div className="bg-white rounded-lg border border-gray-200 p-6 mb-8 flex-shrink-0">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-medium text-gray-900">Descrição</h3>
                   {!isEditing && (
@@ -474,22 +474,24 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                 )}
               </div>
 
-              {/* Comentários */}
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <div className="space-y-6">
-                  <div>
+              {/* Comentários - com altura fixa para impedir efeito de empurrar o modal */}
+              <div className="bg-white rounded-lg border border-gray-200 p-6 flex-1 flex flex-col">
+                <div className="flex flex-col h-full">
+                  <div className="flex-shrink-0">
                     <h3 className="text-lg font-medium text-gray-900 mb-4">Comentários</h3>
                   </div>
 
-                  <TicketComments 
-                    ticket={ticket}
-                    onCommentAdded={(comment) => {
-                      onUpdate({
-                        ...ticket,
-                        comments: [...(ticket.comments || []), comment]
-                      });
-                    }}
-                  />
+                  <div className="flex-1 overflow-hidden">
+                    <TicketComments 
+                      ticket={ticket}
+                      onCommentAdded={(comment) => {
+                        onUpdate({
+                          ...ticket,
+                          comments: [...(ticket.comments || []), comment]
+                        });
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
             </div>

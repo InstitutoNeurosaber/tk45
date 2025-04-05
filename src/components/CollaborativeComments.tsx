@@ -612,51 +612,57 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
             ? "bg-amber-100 text-amber-700" 
             : "bg-red-100 text-red-700"
         }`}>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-1">
             {!isOnline ? (
               <>
-                <WifiOff className="h-4 w-4" />
+                <WifiOff className="h-4 w-4 flex-shrink-0" />
                 <span className="text-sm">Modo offline - Os comentários serão sincronizados quando a conexão for restabelecida.</span>
               </>
             ) : !isConnected ? (
               <>
-                <AlertCircle className="h-4 w-4" />
-                <span className="text-sm">Modo colaborativo offline - Os comentários serão sincronizados quando a conexão for restabelecida. Os comentários continuam sendo salvos normalmente.</span>
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                <span className="text-sm">Modo colaborativo offline - Os comentários continuam sendo salvos normalmente e serão sincronizados quando a conexão for restabelecida.</span>
               </>
             ) : (
               <>
-                <AlertCircle className="h-4 w-4" />
-                <span className="text-sm">{chatError || 'Erro de conexão'}</span>
+                <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                <span className="text-sm">{chatError || 'Erro de conexão com o modo colaborativo'}</span>
               </>
             )}
           </div>
           
-          <button 
-            onClick={handleReconnect}
-            disabled={isReconnecting || (!navigator.onLine && !isConnected)}
-            className={`p-1.5 rounded text-xs flex items-center gap-1 font-medium transition-colors ${
-              isReconnecting 
-                ? 'bg-gray-200 text-gray-600 cursor-not-allowed' 
-                : !navigator.onLine
-                ? 'bg-gray-200 text-gray-600 cursor-not-allowed'
-                : 'bg-amber-200 text-amber-800 hover:bg-amber-300'
-            }`}
-            title={isReconnecting 
-                  ? "Tentando reconectar..."
-                  : !navigator.onLine 
-                  ? "Verifique sua conexão com a internet" 
-                  : "Tentar reconectar agora"}
-            aria-label={isReconnecting 
-                     ? "Tentando reconectar..."
-                     : !navigator.onLine 
-                     ? "Verifique sua conexão com a internet" 
-                     : "Tentar reconectar agora"}
-          >
-            <RefreshCw className={`h-3 w-3 ${isReconnecting ? 'animate-spin' : ''}`} />
-            {isReconnecting ? 'Reconectando...' : 'Reconectar'}
-          </button>
+          <div className="flex items-center gap-2 ml-2 flex-shrink-0">
+            <button 
+              onClick={handleReconnect}
+              disabled={isReconnecting || (!navigator.onLine && !isConnected)}
+              className={`p-1.5 rounded text-xs flex items-center gap-1 font-medium transition-colors ${
+                isReconnecting 
+                  ? 'bg-gray-200 text-gray-600 cursor-not-allowed' 
+                  : !navigator.onLine
+                  ? 'bg-gray-200 text-gray-600 cursor-not-allowed'
+                  : 'bg-amber-200 text-amber-800 hover:bg-amber-300'
+              }`}
+              title={isReconnecting 
+                    ? "Tentando reconectar..."
+                    : !navigator.onLine 
+                    ? "Verifique sua conexão com a internet" 
+                    : "Tentar reconectar agora"}
+              aria-label={isReconnecting 
+                      ? "Tentando reconectar..."
+                      : !navigator.onLine 
+                      ? "Verifique sua conexão com a internet" 
+                      : "Tentar reconectar agora"}
+            >
+              <RefreshCw className={`h-3 w-3 ${isReconnecting ? 'animate-spin' : ''}`} />
+              {isReconnecting ? 'Reconectando...' : 'Reconectar'}
+            </button>
+          </div>
         </div>
       )}
+
+      <div className="px-4 py-1 mb-1 text-xs text-blue-600 bg-blue-50 rounded">
+        <span>Os comentários são sempre salvos no banco de dados, independente do modo colaborativo estar ativo.</span>
+      </div>
 
       {/* Exibir erro específico do formulário */}
       {error && (
@@ -697,7 +703,7 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
       <div 
         ref={chatContainerRef}
         className="flex-1 overflow-y-auto p-4"
-        style={{ maxHeight: '60vh' }}
+        style={{ height: '400px' }}
       >
         {/* Agrupamento por data */}
         {Object.entries(groupCommentsByDate()).map(([date, dateComments]) => (
