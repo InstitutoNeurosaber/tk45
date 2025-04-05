@@ -344,47 +344,46 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                 </div>
               </div>
               <div className="flex items-center space-x-2">
-                {/* Botão de sincronização com ClickUp */}
-                {ticket.id && (
-                  <>
-                    <div className="flex-1">
-                      <button
-                        onClick={handleSyncWithClickUp}
-                        disabled={clickUpSyncLoading}
-                        className={`inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md ${
-                          clickUpSyncSuccess 
-                            ? 'bg-green-600 text-white hover:bg-green-700' 
-                            : 'bg-blue-600 text-white hover:bg-blue-700'
-                        } disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200`}
-                        title="Sincronizar com ClickUp"
-                      >
-                        {clickUpSyncLoading ? (
-                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                        ) : clickUpSyncSuccess ? (
-                          <>
-                            <LinkIcon className="h-4 w-4 mr-2" />
-                            Sincronizado
-                          </>
-                        ) : (
-                          <>
-                            <RefreshCw className="h-4 w-4 mr-2" />
-                            Sincronizar com ClickUp
-                          </>
-                        )}
-                      </button>
-                    </div>
-                    
-                    {ticket.taskId && (
-                      <a
-                        href={`https://app.clickup.com/t/${ticket.taskId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:text-blue-800 text-sm"
-                      >
-                        Abrir no ClickUp
-                      </a>
-                    )}
-                  </>
+                {/* Botão de sincronização com ClickUp - mostrar apenas se não tiver taskId */}
+                {ticket.id && !ticket.taskId && (
+                  <div className="flex-1">
+                    <button
+                      onClick={handleSyncWithClickUp}
+                      disabled={clickUpSyncLoading}
+                      className={`inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md ${
+                        clickUpSyncSuccess 
+                          ? 'bg-green-600 text-white hover:bg-green-700' 
+                          : 'bg-blue-600 text-white hover:bg-blue-700'
+                      } disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200`}
+                      title="Sincronizar com ClickUp"
+                    >
+                      {clickUpSyncLoading ? (
+                        <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                      ) : clickUpSyncSuccess ? (
+                        <>
+                          <LinkIcon className="h-4 w-4 mr-2" />
+                          Sincronizado
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          Sincronizar com ClickUp
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+                
+                {ticket.taskId && (
+                  <a
+                    href={`https://app.clickup.com/t/${ticket.taskId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800 text-sm"
+                  >
+                    <LinkIcon className="h-4 w-4 mr-1 inline-block" />
+                    Abrir no ClickUp
+                  </a>
                 )}
                 
                 <button

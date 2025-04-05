@@ -83,6 +83,35 @@ export const ticketService = {
       };
 
       try {
+        // Tentar sincronizar com o ClickUp automaticamente
+        try {
+          const { clickupService } = await import('../services/clickupService');
+          const isConfigured = await clickupService.isConfigured();
+          
+          if (isConfigured) {
+            console.log("ClickUp configurado. Sincronizando ticket recém-criado automaticamente...");
+            const taskId = await clickupService.syncTicketWithClickUp(newTicket);
+            
+            if (taskId) {
+              console.log(`Sincronização automática bem-sucedida. ID da tarefa ClickUp: ${taskId}`);
+              // Atualizar o ticket com o taskId do ClickUp
+              const updateData = { 
+                taskId,
+                updatedAt: Timestamp.now()
+              };
+              
+              await updateDoc(doc(db, 'tickets', newTicket.id), updateData);
+              newTicket.taskId = taskId;
+              newTicket.updatedAt = updateData.updatedAt.toDate();
+            }
+          } else {
+            console.log("ClickUp não está configurado. Pulando sincronização automática.");
+          }
+        } catch (clickupError) {
+          console.error("Erro ao sincronizar com ClickUp automaticamente:", clickupError);
+          // Não falha a criação do ticket se a sincronização falhar
+        }
+        
         // Enviar webhook e processar resposta
         const webhookResponse = await webhookService.sendWebhookNotification('ticket.created', newTicket);
         
@@ -92,8 +121,8 @@ export const ticketService = {
             updatedAt: Timestamp.now()
           };
 
-          // Atualizar taskId se retornado
-          if (webhookResponse.taskId) {
+          // Atualizar taskId se retornado e se ainda não tiver sido atualizado pelo ClickUp
+          if (webhookResponse.taskId && !newTicket.taskId) {
             updates.taskId = webhookResponse.taskId;
           }
 

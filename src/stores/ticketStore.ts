@@ -37,25 +37,7 @@ export const useTicketStore = create<TicketState>((set, get) => ({
       set({ loading: true, error: null });
       const newTicket = await ticketService.createTicket(ticketData);
       
-      // Tenta sincronizar com o ClickUp
-      try {
-        await clickupService.isConfigured().then(async (isConfigured) => {
-          if (isConfigured) {
-            console.log("ClickUp configurado, sincronizando ticket recém-criado");
-            const taskId = await clickupService.syncTicketWithClickUp(newTicket);
-            if (taskId) {
-              // Atualiza o ticket com o taskId do ClickUp
-              await ticketService.updateTicket(newTicket.id, { taskId });
-              newTicket.taskId = taskId;
-            }
-          } else {
-            console.log("ClickUp não configurado, pulando sincronização");
-          }
-        });
-      } catch (syncError) {
-        console.error("Erro ao sincronizar com ClickUp:", syncError);
-        // Não falha a criação do ticket se a sincronização falhar
-      }
+      // A sincronização com o ClickUp agora é feita automaticamente no serviço
       
       set(state => ({
         tickets: [newTicket, ...state.tickets],
@@ -258,6 +240,11 @@ export const useTicketStore = create<TicketState>((set, get) => ({
   deleteComment: async (ticketId, commentId) => {
     try {
       set({ loading: true, error: null });
+      const ticket = get().tickets.find(t => t.id === ticketId);
+      
+      // Guardar o comentário para possível referência e sincronização
+      const commentToDelete = ticket?.comments?.find(c => c.id === commentId);
+      
       await ticketService.deleteComment(ticketId, commentId);
       
       // Atualizar o estado local
@@ -271,6 +258,32 @@ export const useTicketStore = create<TicketState>((set, get) => ({
         }),
         loading: false
       }));
+      
+      // Sincronizar exclusão do comentário com o ClickUp se aplicável
+      if (ticket?.taskId && commentToDelete) {
+        try {
+          await clickupService.isConfigured().then(async (isConfigured) => {
+            if (isConfigured) {
+              console.log("ClickUp configurado, notificando exclusão de comentário");
+              // Como o ClickUp não permite excluir comentários via API, 
+              // adicionamos um novo comentário indicando que o comentário anterior foi excluído
+              const deletionNotice = {
+                id: crypto.randomUUID(),
+                content: `[Sistema] Um comentário foi excluído: "${commentToDelete.content.substring(0, 50)}${commentToDelete.content.length > 50 ? '...' : ''}"`,
+                userId: commentToDelete.userId,
+                userName: commentToDelete.userName || 'Usuário',
+                ticketId: ticketId,
+                createdAt: new Date()
+              };
+              
+              await clickupService.addComment(ticket.taskId as string, deletionNotice);
+            }
+          });
+        } catch (syncError) {
+          console.error("Erro ao sincronizar exclusão de comentário com ClickUp:", syncError);
+          // Não falha a exclusão do comentário se a sincronização falhar
+        }
+      }
     } catch (error) {
       set({ 
         error: error instanceof Error ? error.message : 'Erro ao excluir comentário',
