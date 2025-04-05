@@ -616,7 +616,7 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
             {!isOnline ? (
               <>
                 <WifiOff className="h-4 w-4" />
-                <span className="text-sm">Sem conexão com a internet. Os comentários serão salvos quando a conexão for restabelecida.</span>
+                <span className="text-sm">Modo offline - Os comentários serão sincronizados quando a conexão for restabelecida.</span>
               </>
             ) : !isConnected ? (
               <>
@@ -634,11 +634,23 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
           <button 
             onClick={handleReconnect}
             disabled={isReconnecting || (!navigator.onLine && !isConnected)}
-            className={`p-1 rounded text-xs flex items-center gap-1 ${
+            className={`p-1.5 rounded text-xs flex items-center gap-1 font-medium transition-colors ${
               isReconnecting 
                 ? 'bg-gray-200 text-gray-600 cursor-not-allowed' 
+                : !navigator.onLine
+                ? 'bg-gray-200 text-gray-600 cursor-not-allowed'
                 : 'bg-amber-200 text-amber-800 hover:bg-amber-300'
             }`}
+            title={isReconnecting 
+                  ? "Tentando reconectar..."
+                  : !navigator.onLine 
+                  ? "Verifique sua conexão com a internet" 
+                  : "Tentar reconectar agora"}
+            aria-label={isReconnecting 
+                     ? "Tentando reconectar..."
+                     : !navigator.onLine 
+                     ? "Verifique sua conexão com a internet" 
+                     : "Tentar reconectar agora"}
           >
             <RefreshCw className={`h-3 w-3 ${isReconnecting ? 'animate-spin' : ''}`} />
             {isReconnecting ? 'Reconectando...' : 'Reconectar'}

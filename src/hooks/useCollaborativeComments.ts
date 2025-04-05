@@ -235,52 +235,75 @@ export function useCollaborativeComments(ticketId: string) {
         awareness.on('change', updateActiveUsers);
         updateActiveUsers();
 
-        // Monitorar estado da conexão de forma mais agressiva
+        // Monitorar estado da conexão de forma mais segura (verificação prévia de disponibilidade)
         const checkConnection = () => {
-          if (!yjsProvider) return;
+          if (!yjsProvider || providerRef.current !== yjsProvider) return; // Ignorar se o provider atual for diferente
           
-          const connected = yjsProvider.isConnected();
-          console.log('[Comments] Connection status check:', connected);
-          
-          // Atualizar estado de conexão apenas se mudar para evitar renderizações desnecessárias
-          if (connected !== isConnected) {
-            console.log('[Comments] Connection status changed to:', connected);
-            setIsConnected(connected);
-          }
-
-          // Se offline, verificar se temos uma conexão com a internet
-          if (!connected && navigator.onLine && reconnectAttempts.current < maxReconnectAttempts) {
-            console.log('[Comments] Dispositivo online mas provedor desconectado. Tentando reconectar...');
+          try {
+            const connected = yjsProvider.isConnected();
+            console.log('[Comments] Connection status check:', connected);
+            
+            // Atualizar estado de conexão apenas se mudar para evitar renderizações desnecessárias
+            if (connected !== isConnected) {
+              console.log('[Comments] Connection status changed to:', connected);
+              setIsConnected(connected);
+            }
+  
+            // Se offline, verificar se temos uma conexão com a internet e se ainda não excedemos as tentativas
+            if (!connected && navigator.onLine && reconnectAttempts.current < maxReconnectAttempts) {
+              console.log('[Comments] Dispositivo online mas provedor desconectado. Tentando reconectar...');
+              reconnectAttempts.current++;
+              yjsProvider.reconnect();
+              setConnectionAttempts(prev => prev + 1);
+            } else if (connected) {
+              // Resetar contadores quando conectado
+              reconnectAttempts.current = 0;
+              setConnectionAttempts(0);
+              setError(null);
+            } else if (reconnectAttempts.current >= maxReconnectAttempts) {
+              // Parar tentativas após exceder o máximo e definir mensagem de erro
+              console.log('[Comments] Número máximo de tentativas excedido. Operando em modo offline.');
+              setError('Não foi possível estabelecer conexão após várias tentativas. Operando em modo offline.');
+            }
+          } catch (error) {
+            console.error('[Comments] Erro durante verificação de conexão:', error);
+            // Em caso de erro na verificação, incrementar contador para evitar loop infinito
             reconnectAttempts.current++;
-            yjsProvider.reconnect();
-            setConnectionAttempts(prev => prev + 1);
-          } else if (connected) {
-            // Resetar contadores quando conectado
-            reconnectAttempts.current = 0;
-            setConnectionAttempts(0);
-            setError(null);
           }
         };
 
         // Verificar conexão inicialmente e periodicamente (a cada 10 segundos)
         checkConnection();
-        connectionCheckInterval.current = setInterval(checkConnection, 10000);
+        connectionCheckInterval.current = setInterval(() => {
+          if (reconnectAttempts.current < maxReconnectAttempts) {
+            checkConnection();
+          }
+        }, 10000);
 
         setProvider(yjsProvider);
         
         // Verificar conexão após um curto delay para dar tempo ao provedor de se conectar
         setTimeout(() => {
-          const connectionStatus = yjsProvider.isConnected();
-          console.log('[Comments] Initial connection check result:', connectionStatus);
-          setIsConnected(connectionStatus);
-          if (!connectionStatus && navigator.onLine) {
-            console.log('[Comments] Initial connection failed but device is online. Scheduling retry...');
-            setTimeout(() => {
-              if (yjsProvider && !yjsProvider.isConnected() && navigator.onLine) {
-                console.log('[Comments] Automatic reconnection attempt...');
-                yjsProvider.reconnect();
-              }
-            }, 2000);
+          if (!yjsProvider || providerRef.current !== yjsProvider) return; // Verificar novamente se o provider ainda é válido
+          
+          try {
+            const connectionStatus = yjsProvider.isConnected();
+            console.log('[Comments] Initial connection check result:', connectionStatus);
+            setIsConnected(connectionStatus);
+            if (!connectionStatus && navigator.onLine && reconnectAttempts.current < maxReconnectAttempts) {
+              console.log('[Comments] Initial connection failed but device is online. Scheduling retry...');
+              setTimeout(() => {
+                if (yjsProvider && !yjsProvider.isConnected() && navigator.onLine 
+                    && reconnectAttempts.current < maxReconnectAttempts && providerRef.current === yjsProvider) {
+                  console.log('[Comments] Automatic reconnection attempt...');
+                  reconnectAttempts.current++;
+                  yjsProvider.reconnect();
+                }
+              }, 2000);
+            }
+          } catch (error) {
+            console.error('[Comments] Erro durante verificação inicial de conexão:', error);
+            reconnectAttempts.current++;
           }
         }, 1500);
 
@@ -303,6 +326,8 @@ export function useCollaborativeComments(ticketId: string) {
         console.error('[Comments] Error initializing provider:', error);
         setError(error instanceof Error ? error.message : 'Erro ao conectar ao chat colaborativo');
         setIsConnected(false);
+        setIsInitialized(true); // Marcar como inicializado mesmo com erro
+        reconnectAttempts.current = maxReconnectAttempts; // Evitar novas tentativas após erro crítico
         
         return undefined;
       }
@@ -466,27 +491,50 @@ export function useCollaborativeComments(ticketId: string) {
 
   // Função para forçar reconexão
   const forceReconnect = useCallback(() => {
-    if (providerRef.current) {
-      console.log('[Comments] Forçando reconexão manualmente...');
+    if (!providerRef.current) {
+      console.error('[Comments] Provedor não inicializado, não é possível reconectar');
+      setError('Não foi possível reconectar: provedor não inicializado');
+      return;
+    }
+    
+    if (reconnectAttempts.current >= maxReconnectAttempts) {
+      console.log('[Comments] Reconectando após atingir limite de tentativas automáticas...');
+      // Resetar contador para permitir novas tentativas automáticas
       reconnectAttempts.current = 0;
+    }
+    
+    console.log('[Comments] Forçando reconexão manualmente...');
+    try {
       providerRef.current.reconnect();
       setConnectionAttempts(prev => prev + 1);
       
       // Verificar se a conexão foi reestabelecida após um delay
       setTimeout(() => {
-        if (providerRef.current && providerRef.current.isConnected()) {
-          console.log('[Comments] Reconexão manual bem-sucedida');
-          setIsConnected(true);
-          setError(null);
-        } else {
-          console.log('[Comments] Reconexão manual falhou');
-          // Tentar novamente com outro método se ainda estiver online
-          if (navigator.onLine) {
-            console.log('[Comments] Tentando método alternativo de reconexão...');
-            // Aqui poderia implementar outras estratégias de reconexão
+        if (!providerRef.current) return;
+        
+        try {
+          if (providerRef.current.isConnected()) {
+            console.log('[Comments] Reconexão manual bem-sucedida');
+            setIsConnected(true);
+            setError(null);
+          } else {
+            console.log('[Comments] Reconexão manual falhou');
+            reconnectAttempts.current++; // Incrementar contador mesmo em tentativas manuais
+            // Tentar novamente com outro método se ainda estiver online
+            if (navigator.onLine && reconnectAttempts.current < maxReconnectAttempts) {
+              console.log('[Comments] Tentando método alternativo de reconexão...');
+              // Aqui poderia implementar outras estratégias de reconexão
+            }
           }
+        } catch (error) {
+          console.error('[Comments] Erro ao verificar estado de conexão após reconexão manual:', error);
+          reconnectAttempts.current++; // Incrementar para evitar loop
         }
       }, 2000);
+    } catch (error) {
+      console.error('[Comments] Erro durante tentativa de reconexão manual:', error);
+      setError('Falha ao tentar reconectar. Tente novamente mais tarde.');
+      reconnectAttempts.current++; // Incrementar para evitar loop
     }
   }, []);
 

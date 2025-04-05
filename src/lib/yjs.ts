@@ -11,26 +11,37 @@ const activeRoomCounter: Record<string, number> = {};
 const providerInstances: Record<string, YjsProvider> = {};
 
 export class YjsProvider {
-  private doc: Y.Doc;
+  private doc!: Y.Doc;
   private provider: WebrtcProvider | null = null;
-  private persistence: IndexeddbPersistence;
-  private awareness: Awareness;
-  private commentsArray: Y.Array<Comment>;
-  private roomId: string;
+  private persistence!: IndexeddbPersistence;
+  private awareness!: Awareness;
+  private commentsArray!: Y.Array<Comment>;
+  private roomId!: string;
   private connectionTimeout: NodeJS.Timeout | null = null;
-  private maxRetries = 3; // Reduzido para evitar muitas tentativas
+  private maxRetries = 2; // Reduzido para evitar muitas tentativas 
   private retryCount = 0;
-  private retryDelay = 2000;
+  private retryDelay = 3000;
   private offlineMode = false;
   private cleanupFunctions: Array<() => void> = [];
   private providerInitialized = false;
   private documentDestroyed = false;
+  private reconnectAttempted = false;
 
   constructor(roomId: string, userId: string, userName: string) {
     // Verificar se já existe uma instância para esta sala
     if (providerInstances[roomId]) {
       console.log(`[YJS] Reutilizando instância existente para sala ${roomId}`);
-      return providerInstances[roomId];
+      const instance = providerInstances[roomId];
+      
+      // Copiar todas as propriedades necessárias da instância existente
+      Object.getOwnPropertyNames(instance).forEach(prop => {
+        if (prop !== 'constructor' && typeof prop === 'string') {
+          // @ts-ignore
+          this[prop] = instance[prop];
+        }
+      });
+      
+      return instance;
     }
 
     this.roomId = roomId;
@@ -39,39 +50,62 @@ export class YjsProvider {
     activeRoomCounter[roomId] = (activeRoomCounter[roomId] || 0) + 1;
     console.log(`[YJS] Iniciando provedor para sala ${roomId} (Total instâncias: ${activeRoomCounter[roomId]})`);
     
-    // Usar um único documento para cada sala
-    this.doc = new Y.Doc();
-    
-    // Inicializar array de comentários
-    this.commentsArray = this.doc.getArray('comments');
-    
-    // Configurar persistência local
-    this.persistence = new IndexeddbPersistence(roomId, this.doc);
-    this.persistence.on('synced', () => {
-      console.log(`[YJS] Dados locais sincronizados (${roomId})`);
-    });
-    
-    // Criação do awareness primeiro
-    this.awareness = new Awareness(this.doc);
-    
-    // Configurar informações do usuário
-    this.awareness.setLocalStateField('user', {
-      name: userName,
-      id: userId,
-      color: `#${Math.floor(Math.random()*16777215).toString(16)}`
-    });
-
-    // Inicialização atrasada do provider para evitar conexões desnecessárias
-    setTimeout(() => {
-      this.initializeProvider();
-    }, 500);
+    try {
+      // Usar um único documento para cada sala
+      this.doc = new Y.Doc();
+      
+      // Inicializar array de comentários
+      this.commentsArray = this.doc.getArray('comments');
+      
+      // Configurar persistência local
+      this.persistence = new IndexeddbPersistence(roomId, this.doc);
+      this.persistence.on('synced', () => {
+        console.log(`[YJS] Dados locais sincronizados (${roomId})`);
+      });
+      
+      // Criação do awareness primeiro
+      this.awareness = new Awareness(this.doc);
+      
+      // Configurar informações do usuário
+      this.awareness.setLocalStateField('user', {
+        name: userName,
+        id: userId,
+        color: `#${Math.floor(Math.random()*16777215).toString(16)}`
+      });
+  
+      // Registrar esta instância para reutilização ANTES de iniciar o provider
+      providerInstances[roomId] = this;
+  
+      // Inicialização atrasada do provider para evitar conexões desnecessárias
+      setTimeout(() => {
+        if (!this.providerInitialized && !this.documentDestroyed) {
+          this.initializeProvider();
+        }
+      }, 500);
+    } catch (error) {
+      console.error(`[YJS] Erro crítico na inicialização do YjsProvider (${roomId}):`, error);
+      this.documentDestroyed = true; // Marcar como destruído para evitar tentativas futuras
+      this.offlineMode = true;
+      return;
+    }
     
     // Verificar quando a conexão com a internet está disponível
     const onlineHandler = () => {
       console.log('[YJS] Detecção de conexão online. Reconectando...');
       this.offlineMode = false;
-      this.retryCount = 0;
-      this.initializeProvider();
+      
+      // Só tenta reconectar se não estiver já conectado
+      if (!this.provider?.connected && !this.reconnectAttempted && !this.documentDestroyed) {
+        this.reconnectAttempted = true;
+        this.retryCount = 0;
+        
+        setTimeout(() => {
+          this.reconnectAttempted = false; // Reset do flag após a tentativa
+          if (!this.documentDestroyed && !this.provider?.connected) {
+            this.initializeProvider();
+          }
+        }, 1000);
+      }
     };
     
     const offlineHandler = () => {
@@ -90,9 +124,6 @@ export class YjsProvider {
       window.removeEventListener('offline', offlineHandler);
     });
     
-    // Registrar esta instância para reutilização
-    providerInstances[roomId] = this;
-    
     // Debug: Monitorar mudanças no array de comentários
     const observeCallback = () => {
       console.log(`[YJS] Comments updated (${roomId}):`, this.commentsArray.toArray());
@@ -104,7 +135,10 @@ export class YjsProvider {
   }
 
   private initializeProvider() {
-    if (this.providerInitialized || this.documentDestroyed) return;
+    if (this.providerInitialized || this.documentDestroyed) {
+      console.log(`[YJS] Provider já inicializado ou documento destruído (${this.roomId}), ignorando.`);
+      return;
+    }
     
     try {
       console.log(`[YJS] Inicializando WebRTC provider para sala ${this.roomId}`);
@@ -142,7 +176,8 @@ export class YjsProvider {
             clearTimeout(this.connectionTimeout);
             this.connectionTimeout = null;
           }
-        } else if (status === 'disconnected' && !this.documentDestroyed) {
+        } else if (status === 'disconnected' && !this.documentDestroyed && this.retryCount < this.maxRetries) {
+          // Só tentar reconectar se não excedeu o máximo de tentativas
           this.disconnect(); // Desconectar completamente antes de tentar reconectar
           this.tryReconnect();
         }
@@ -160,6 +195,7 @@ export class YjsProvider {
     } catch (error) {
       console.error(`[YJS] Error initializing provider (${this.roomId}):`, error);
       this.offlineMode = true;
+      this.retryCount = this.maxRetries; // Impedir novas tentativas após erro crítico
     }
   }
 
@@ -176,15 +212,22 @@ export class YjsProvider {
       }
       
       this.connectionTimeout = setTimeout(() => {
-        if (this.provider && !this.provider.connected && !this.documentDestroyed) {
+        if (this.provider && !this.provider.connected && !this.documentDestroyed && this.retryCount < this.maxRetries) {
           console.log(`[YJS] Connection timeout (${this.roomId})`);
           this.disconnect();
           this.tryReconnect();
+        } else if (this.retryCount >= this.maxRetries) {
+          console.log(`[YJS] Max retries reached (${this.roomId}). Staying in offline mode.`);
+          this.offlineMode = true;
         }
       }, 5000);
     } catch (error) {
       console.error(`[YJS] Connection error (${this.roomId}):`, error);
-      this.tryReconnect();
+      if (this.retryCount < this.maxRetries) {
+        this.tryReconnect();
+      } else {
+        this.offlineMode = true;
+      }
     }
   }
 
@@ -194,7 +237,6 @@ export class YjsProvider {
     if (this.retryCount >= this.maxRetries) {
       console.log(`[YJS] Max retries reached (${this.roomId}). Switching to offline mode.`);
       this.offlineMode = true;
-      this.disconnect();
       return;
     }
 
@@ -204,8 +246,11 @@ export class YjsProvider {
     console.log(`[YJS] Attempting reconnect ${this.retryCount}/${this.maxRetries} in ${delay}ms (${this.roomId})`);
     
     setTimeout(() => {
-      if (!this.documentDestroyed && (!this.provider?.connected)) {
+      if (!this.documentDestroyed && !this.provider?.connected && this.retryCount <= this.maxRetries) {
         this.connect();
+      } else if (this.retryCount > this.maxRetries) {
+        console.log(`[YJS] No more reconnect attempts for (${this.roomId}). Staying in offline mode.`);
+        this.offlineMode = true;
       }
     }, delay);
   }
@@ -230,7 +275,10 @@ export class YjsProvider {
   }
 
   public destroy() {
-    if (this.documentDestroyed) return;
+    if (this.documentDestroyed) {
+      console.log(`[YJS] Provider already destroyed (${this.roomId}), skipping`);
+      return;
+    }
     
     console.log(`[YJS] Destroying provider (${this.roomId})...`);
     this.documentDestroyed = true;
@@ -346,18 +394,48 @@ export class YjsProvider {
 
   public reconnect() {
     console.log(`[YJS] Manual reconnect requested (${this.roomId})`);
-    if (this.documentDestroyed) return;
+    if (this.documentDestroyed) {
+      console.log(`[YJS] Cannot reconnect - document destroyed (${this.roomId})`);
+      return;
+    }
+    
+    // Evitar múltiplas reconexões em sequência
+    if (this.reconnectAttempted) {
+      console.log(`[YJS] Reconnect already in progress (${this.roomId}), skipping`);
+      return;
+    }
+    
+    this.reconnectAttempted = true;
+    
+    // Se excedeu tentativas, não permitir mais tentativas manuais
+    if (this.retryCount >= this.maxRetries) {
+      console.log(`[YJS] Max retry attempts reached (${this.roomId}). Staying in offline mode.`);
+      this.offlineMode = true;
+      this.reconnectAttempted = false;
+      return;
+    }
     
     this.retryCount = 0;
     this.offlineMode = false;
     
     this.disconnect();
     
-    // Reinicializar provider se necessário
-    if (!this.providerInitialized) {
-      this.initializeProvider();
-    } else {
-      this.connect();
+    try {
+      // Reinicializar provider se necessário
+      if (!this.providerInitialized) {
+        this.initializeProvider();
+      } else {
+        this.connect();
+      }
+    } catch (error) {
+      console.error(`[YJS] Error during manual reconnect (${this.roomId}):`, error);
+      this.offlineMode = true;
+      this.retryCount = this.maxRetries; // Impedir novas tentativas após erro crítico
     }
+    
+    // Reset flag após um tempo
+    setTimeout(() => {
+      this.reconnectAttempted = false;
+    }, 5000);
   }
 }
