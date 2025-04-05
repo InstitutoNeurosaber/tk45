@@ -1,11 +1,10 @@
 import { create } from 'zustand';
-import { ticketService } from '../services/ticketService';
-import type { Ticket, TicketStatus, Comment } from '../types/ticket';
-import { ClickUpService } from '../services/clickupService';
+import { collection, addDoc, doc, getDoc, getDocs, updateDoc, deleteDoc, query, where, orderBy, Timestamp } from 'firebase/firestore';
+import { clickupService } from '../services/clickupService';
 import { ClickUpAPI } from '../lib/clickup';
-
-// Instanciar o serviço do ClickUp
-const clickupService = new ClickUpService();
+import { db } from '../lib/firebase';
+import { ticketService } from '../services/ticketService';
+import type { Ticket, TicketStatus, TicketPriority, Comment } from '../types/ticket';
 
 interface TicketState {
   tickets: Ticket[];
@@ -211,7 +210,12 @@ export const useTicketStore = create<TicketState>((set, get) => ({
   addComment: async (ticketId, commentData) => {
     try {
       set({ loading: true, error: null });
-      const newComment = await ticketService.addComment(ticketId, commentData);
+      // Adicionamos o ticketId ao comment antes de enviar para o serviço
+      const commentWithTicketId = {
+        ...commentData,
+        ticketId
+      };
+      const newComment = await ticketService.addComment(ticketId, commentWithTicketId);
       
       // Atualizar o estado local
       set(state => ({
@@ -232,13 +236,7 @@ export const useTicketStore = create<TicketState>((set, get) => ({
           await clickupService.isConfigured().then(async (isConfigured) => {
             if (isConfigured) {
               console.log("ClickUp configurado, adicionando comentário à tarefa");
-              // Adicionar o ticketId ao comentário antes de enviar para o ClickUp
-              const commentWithTicketId = {
-                ...newComment,
-                // Já deve ter sido definido pelo ticketService, mas garantimos aqui
-                ticketId
-              };
-              await clickupService.addComment(ticket.taskId as string, commentWithTicketId);
+              await clickupService.addComment(ticket.taskId as string, newComment);
             }
           });
         } catch (syncError) {

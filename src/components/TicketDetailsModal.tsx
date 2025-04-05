@@ -14,7 +14,8 @@ import {
   ExternalLink,
   Trash2,
   Plus,
-  RefreshCw
+  RefreshCw,
+  XCircle
 } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -25,7 +26,7 @@ import { TicketComments } from './TicketComments';
 import { CollaborativeComments } from './CollaborativeComments';
 import { statusLabels, priorityLabels, categoryLabels } from '../types/ticket';
 import type { Ticket, TicketStatus, TicketPriority } from '../types/ticket';
-import { ClickUpService } from '../services/clickupService';
+import { clickupService } from '../services/clickupService';
 
 interface TicketDetailsModalProps {
   ticket: Ticket;
@@ -52,6 +53,9 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
   const [extensionReason, setExtensionReason] = useState('');
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
+  const [clickUpSyncLoading, setClickUpSyncLoading] = useState(false);
+  const [clickUpSyncError, setClickUpSyncError] = useState<string | null>(null);
+  const [clickUpSyncSuccess, setClickUpSyncSuccess] = useState(false);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -212,51 +216,62 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
   };
 
   const handleSyncWithClickUp = async () => {
-    if (ticket.taskId) return; // Já está sincronizado
-    
     try {
-      setSyncLoading(true);
-      setError(null);
+      setClickUpSyncLoading(true);
+      setClickUpSyncError(null);
       
-      console.log("Iniciando sincronização com ClickUp para o ticket:", ticket.id);
+      console.log(`Iniciando sincronização com ClickUp para o ticket: ${ticket.id}`);
       
-      // Chamar a função de sincronização do store
-      const updatedTicket = await syncWithClickUp(ticket);
+      // Verificar se o ClickUp está configurado
+      try {
+        const isConfigured = await clickupService.isConfigured();
+        if (!isConfigured) {
+          setClickUpSyncError('O ClickUp não está configurado corretamente. Verifique as configurações.');
+          setClickUpSyncLoading(false);
+          return;
+        }
+      } catch (configError) {
+        setClickUpSyncError('Erro ao verificar configuração do ClickUp. Verifique se as credenciais estão corretas.');
+        setClickUpSyncLoading(false);
+        return;
+      }
       
-      if (updatedTicket && updatedTicket.taskId) {
-        setSyncSuccess(true);
-        onUpdate(updatedTicket);
-        
-        // Reset visual feedback after 3 seconds
-        setTimeout(() => {
-          setSyncSuccess(false);
-        }, 3000);
-      } else {
-        // Exibir mensagem mais detalhada sobre o erro
-        const errorMsg = 'Não foi possível sincronizar o ticket com o ClickUp. ' + 
-          'Verifique nos logs do console os detalhes do erro. ' +
-          'Possíveis causas: API Key incorreta, Lista não encontrada, ou permissões insuficientes.';
-        
-        console.error('Falha na sincronização com ClickUp:', errorMsg);
-        setError(errorMsg);
+      // Sincronizar o ticket
+      try {
+        const updatedTicket = await syncWithClickUp(ticket);
+        if (updatedTicket && updatedTicket.taskId) {
+          setClickUpSyncSuccess(true);
+          setTimeout(() => setClickUpSyncSuccess(false), 3000);
+          onUpdate(updatedTicket);
+        }
+      } catch (syncError) {
+        throw syncError; // Propagar o erro para ser tratado abaixo
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Erro ao sincronizar com o ClickUp';
-      console.error('Exceção ao sincronizar com ClickUp:', errorMessage);
+      console.error('Exceção ao sincronizar com ClickUp:', error);
       
-      // Tratamento especial para o erro 404 (Not Found)
-      if (errorMessage.includes('404') || errorMessage.includes('not found') || errorMessage.includes('não encontrado')) {
-        setError(
-          'Tarefa não encontrada no ClickUp, o que é esperado para tickets novos. ' +
-          'Ao clicar em "Sincronizar com ClickUp", uma nova tarefa será criada e associada a este ticket. ' +
-          'Tente novamente.'
-        );
-      } else {
-        // Exibir mensagem de erro mais descritiva para outros tipos de erro
-        setError(`Erro ao sincronizar com ClickUp: ${errorMessage}. Verifique a configuração na aba ClickUp.`);
+      let errorMessage = 'Erro ao sincronizar com ClickUp.';
+      
+      if (error instanceof Error) {
+        // Detectar erro específico de status não encontrado
+        if (error.message.includes('Status not found') || error.message.includes('Problema com o status')) {
+          errorMessage = 'Erro: Os status no ClickUp não correspondem aos necessários. ' +
+                        'Verifique se sua lista do ClickUp possui os status: ABERTO, EM ANDAMENTO, RESOLVIDO e FECHADO. ' +
+                        'Crie esses status exatamente com esses nomes na sua lista do ClickUp.';
+        } else if (error.message.includes('não foi encontrada')) {
+          errorMessage = 'Erro: A lista configurada não foi encontrada no ClickUp. ' +
+                        'Verifique o ID da lista nas configurações do ClickUp.';
+        } else if (error.message.includes('404')) {
+          errorMessage = 'Erro 404: Recurso não encontrado. ' +
+                       'Isso pode indicar que a tarefa ainda não existe no ClickUp ou que há um problema com o ID da lista.';  
+        } else {
+          errorMessage = error.message;
+        }
       }
+      
+      setClickUpSyncError(errorMessage);
     } finally {
-      setSyncLoading(false);
+      setClickUpSyncLoading(false);
     }
   };
 
@@ -329,32 +344,47 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                 </div>
               </div>
               <div className="flex items-center space-x-2">
-                {/* Botão de sincronização com ClickUp - só aparece se o ticket não estiver sincronizado */}
-                {!ticket.taskId && (
-                  <button
-                    onClick={handleSyncWithClickUp}
-                    disabled={syncLoading}
-                    className={`inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md ${
-                      syncSuccess 
-                        ? 'bg-green-600 text-white hover:bg-green-700' 
-                        : 'bg-blue-600 text-white hover:bg-blue-700'
-                    } disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200`}
-                    title="Sincronizar com ClickUp"
-                  >
-                    {syncLoading ? (
-                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                    ) : syncSuccess ? (
-                      <>
-                        <LinkIcon className="h-4 w-4 mr-2" />
-                        Sincronizado!
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="h-4 w-4 mr-2" />
-                        Sincronizar com ClickUp
-                      </>
+                {/* Botão de sincronização com ClickUp */}
+                {ticket.id && (
+                  <>
+                    <div className="flex-1">
+                      <button
+                        onClick={handleSyncWithClickUp}
+                        disabled={clickUpSyncLoading}
+                        className={`inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md ${
+                          clickUpSyncSuccess 
+                            ? 'bg-green-600 text-white hover:bg-green-700' 
+                            : 'bg-blue-600 text-white hover:bg-blue-700'
+                        } disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200`}
+                        title="Sincronizar com ClickUp"
+                      >
+                        {clickUpSyncLoading ? (
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                        ) : clickUpSyncSuccess ? (
+                          <>
+                            <LinkIcon className="h-4 w-4 mr-2" />
+                            Sincronizado
+                          </>
+                        ) : (
+                          <>
+                            <RefreshCw className="h-4 w-4 mr-2" />
+                            Sincronizar com ClickUp
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    
+                    {ticket.taskId && (
+                      <a
+                        href={`https://app.clickup.com/t/${ticket.taskId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 text-sm"
+                      >
+                        Abrir no ClickUp
+                      </a>
                     )}
-                  </button>
+                  </>
                 )}
                 
                 <button
@@ -375,6 +405,23 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
               </div>
             </div>
           </div>
+
+          {/* Mensagem de erro do ClickUp */}
+          {clickUpSyncError && (
+            <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-md">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <XCircle className="h-5 w-5 text-red-400" />
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-sm font-medium text-red-800">Erro na sincronização</h3>
+                  <div className="mt-2 text-sm text-red-700">
+                    <p>{clickUpSyncError}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Conteúdo */}
           <div className="flex h-[calc(90vh-180px)]">

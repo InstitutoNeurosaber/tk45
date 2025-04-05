@@ -153,14 +153,34 @@ export class ClickUpService {
           dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).getTime();
         }
         
+        // Verificar se o ID do ticket é válido para custom_fields
+        const isValidTicketId = (id: string) => {
+          // Verifica se o ID é alfanumérico e não causa problemas como UUID
+          return typeof id === 'string' && id.length > 0;
+        };
+
+        // Adicionar ID personalizado para rastreamento
+        let customFields = [];
+        if (isValidTicketId(ticket.id)) {
+          customFields.push({
+            id: "ticket_id",
+            value: `ticket-${ticket.id.substring(0, 10)}` // Usa apenas uma parte do ID original
+          });
+        } else {
+          customFields.push({
+            id: "ticket_id",
+            value: `ticket-${Date.now()}`
+          });
+        }
+        
         const taskData = {
-          id: ticket.id,
           title: ticket.title,
           name: ticket.title,
           description: ticket.description || "Sem descrição",
           status: this.mapStatus(ticket.status),
           priority: this.getPriorityLevel(ticket.priority),
-          due_date: dueDate
+          due_date: dueDate,
+          custom_fields: customFields
         };
         console.log(`Dados para criar tarefa:`, taskData);
         
@@ -296,23 +316,45 @@ export class ClickUpService {
     }
   }
 
-  private getPriorityLevel(priority: Ticket['priority']): number {
-    const priorityMap = {
-      low: 3,
-      medium: 2,
-      high: 1,
-      critical: 4
-    };
-    return priorityMap[priority];
+  // Mapeia o status do ticket para o status no ClickUp
+  private mapStatus(status: string): string {
+    console.log(`Mapeando status do ticket: "${status}"`);
+    
+    // Certifique-se de que os nomes exatos dos status existem no ClickUp
+    switch(status) {
+      case 'open':
+        return 'ABERTO';
+      case 'in_progress':
+        return 'EM ANDAMENTO';
+      case 'resolved':
+        return 'RESOLVIDO';
+      case 'closed':
+        return 'FECHADO';
+      default:
+        console.warn(`Status desconhecido: ${status}, usando status padrão 'ABERTO'`);
+        return 'ABERTO';
+    }
   }
 
-  private mapStatus(status: Ticket['status']): string {
-    const statusMap = {
-      open: 'to do',
-      in_progress: 'in progress',
-      resolved: 'complete',
-      closed: 'closed'
-    };
-    return statusMap[status];
+  // Mapeia a prioridade do ticket para o nível de prioridade no ClickUp
+  private getPriorityLevel(priority: string): number {
+    console.log(`Mapeando prioridade do ticket: "${priority}"`);
+    
+    switch(priority) {
+      case 'low':
+        return 3;
+      case 'medium':
+        return 2;
+      case 'high':
+        return 1;
+      case 'critical':
+        return 4;
+      default:
+        console.warn(`Prioridade desconhecida: ${priority}, usando prioridade padrão 'Normal (2)'`);
+        return 2;  // Normal
+    }
   }
 }
+
+// Exportar uma instância única do serviço para uso nos componentes
+export const clickupService = new ClickUpService();
