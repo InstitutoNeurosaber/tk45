@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Função auxiliar para verificar se o usuário está autenticado
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Regras para tickets
+    match /tickets/{ticketId} {
+      // Qualquer usuário autenticado pode ler e escrever tickets
+      allow read, write: if isAuthenticated();
+    }
+  }
+} 

@@ -20,7 +20,6 @@ import { ThemeToggle } from './components/ThemeToggle';
 import { UserMenu } from './components/UserMenu';
 import { TicketFilters } from './components/TicketFilters';
 import { UserManagement } from './components/UserManagement';
-import { CommentsPage } from './pages/Comments';
 import { DiaryPage } from './pages/Diary';
 import { ProfilePage } from './components/ProfilePage';
 import type { Ticket, TicketStatus, TicketPriority, TicketCategory } from './types/ticket';
@@ -63,11 +62,10 @@ function MainContent() {
     }
   }, [user, fetchUsers]);
 
-  const handleCreateTicket = async (data: Omit<Ticket, 'id' | 'createdAt' | 'updatedAt' | 'deadline' | 'userId' | 'comments' | 'attachments'>) => {
+  const handleCreateTicket = async (data: Omit<Ticket, 'id' | 'createdAt' | 'updatedAt' | 'deadline' | 'userId' | 'attachments'>) => {
     await createTicket({
       ...data,
       userId: user.uid,
-      comments: [],
       attachments: []
     });
     
@@ -325,7 +323,6 @@ function App() {
       <ToastContainer />
       <Router>
         <Routes>
-          <Route path="/comments/:ticketId" element={<CommentsPage />} />
           <Route path="/diary" element={<DiaryPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/" element={<MainContent />} />

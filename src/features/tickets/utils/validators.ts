@@ -25,3 +25,17 @@ export const validators = {
     return isAdmin || commentUserId === currentUserId;
   }
 };
+
+export const canEditTicket = (userId: string | null, ticket: Ticket | null): boolean => {
+  if (!userId || !ticket) return false;
+  
+  // Verifica se o usuário é o criador do ticket
+  return ticket.createdBy === userId;
+};
+
+export const canDeleteTicket = (userId: string | null, ticket: Ticket | null): boolean => {
+  if (!userId || !ticket) return false;
+  
+  // Verifica se o usuário é o criador do ticket
+  return ticket.createdBy === userId;
+};

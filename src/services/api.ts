@@ -65,10 +65,11 @@ interface UpdatePriorityData {
   priority: TicketPriority;
 }
 
-// Interface para criação de comentário
-interface CreateCommentData {
-  content: string;
+export interface AddAttachmentData {
+  ticketId: string;
+  file: File;
   userId: string;
+  userName: string;
 }
 
 export const ticketApi = {
@@ -85,11 +86,6 @@ export const ticketApi = {
   // Atualizar prioridade do ticket
   async updatePriority(ticketId: string, { priority }: UpdatePriorityData) {
     return api.post('/tickets/priority', { ticketId, priority });
-  },
-
-  // Adicionar comentário ao ticket
-  async addComment(ticketId: string, data: CreateCommentData) {
-    return api.post('/tickets/comments', { ticketId, ...data });
   },
 
   // Excluir ticket
@@ -119,6 +115,13 @@ export const testApiKey = async (apiKey: string) => {
   } catch (error) {
     throw new Error('API key inválida');
   }
+};
+
+// Função para adicionar um anexo a um ticket
+export const addAttachment = async (data: AddAttachmentData) => {
+  const { ticketId, file, userId, userName } = data;
+  
+  // ... existing code ...
 };
 
 export default api;

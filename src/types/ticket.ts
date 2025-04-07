@@ -34,10 +34,6 @@ export interface Message {
   };
 }
 
-export interface Comment extends Message {
-  // Campos específicos de comentários, se necessário
-}
-
 export interface Attachment {
   id: string;
   ticketId: string;
@@ -70,7 +66,6 @@ export interface Ticket {
   userId: string;
   assignedToId?: string;
   assignedToName?: string;
-  comments?: Comment[];
   attachments?: Attachment[];
   taskId?: string;
   gmailId?: string;

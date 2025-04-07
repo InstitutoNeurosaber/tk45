@@ -4,7 +4,6 @@ import { TicketHeader } from './TicketHeader';
 import { TicketInfo } from './TicketInfo';
 import { TicketStatus } from './TicketStatus';
 import { TicketPriority } from './TicketPriority';
-import { TicketComments } from './TicketComments';
 import { DeleteConfirmationModal } from '../../../components/DeleteConfirmationModal';
 import type { Ticket } from '../../../../types/ticket';
 
@@ -87,8 +86,6 @@ export function TicketDetails({ ticket, onClose, onStatusChange, onUpdate }: Tic
                     <p className="text-gray-700 whitespace-pre-wrap">{ticket.description}</p>
                   )}
                 </div>
-
-                <TicketComments ticket={ticket} />
               </div>
             </div>
           </div>

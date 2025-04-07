@@ -9,27 +9,22 @@ import {
   getDocs,
   getDoc,
   Timestamp,
-  DocumentData,
-  arrayUnion,
-  arrayRemove
+  QueryDocumentSnapshot,
+  orderBy
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { webhookService } from './webhookService';
-import type { Ticket, Comment } from '../types/ticket';
+import type { Ticket, TicketStatus } from '../types/ticket';
 import { priorityDeadlines } from '../types/ticket';
 
-function convertToTicket(doc: DocumentData): Ticket {
+function convertToTicket(doc: QueryDocumentSnapshot<any>): Ticket {
   const data = doc.data();
   return {
     id: doc.id,
     ...data,
-    createdAt: data.createdAt.toDate(),
-    updatedAt: data.updatedAt.toDate(),
-    deadline: data.deadline?.toDate(),
-    comments: data.comments?.map((comment: any) => ({
-      ...comment,
-      createdAt: comment.createdAt.toDate()
-    })) || [],
+    createdAt: data.createdAt?.toDate() || new Date(),
+    updatedAt: data.updatedAt?.toDate() || new Date(),
+    deadline: data.deadline?.toDate() || new Date(),
     attachments: data.attachments || [],
     taskId: data.taskId,
     priorityLockedAt: data.priorityLockedAt?.toDate(),
@@ -44,7 +39,7 @@ export const ticketService = {
       const ticketsRef = collection(db, 'tickets');
       const q = query(ticketsRef, where('title', '>=', title), where('title', '<=', title + '\uf8ff'));
       const snapshot = await getDocs(q);
-      return snapshot.docs.map(doc => convertToTicket(doc));
+      return snapshot.docs.map((doc: QueryDocumentSnapshot<any>) => convertToTicket(doc));
     } catch (error) {
       console.error('Erro ao buscar tickets por título:', error);
       throw error;
@@ -54,7 +49,7 @@ export const ticketService = {
   async createTicket(ticketData: Omit<Ticket, 'id' | 'createdAt' | 'updatedAt' | 'deadline'>): Promise<Ticket> {
     try {
       const now = Timestamp.now();
-      const deadlineDate = new Date(now.toDate().getTime() + priorityDeadlines[ticketData.priority]);
+      const deadlineDate = new Date(now.toMillis() + priorityDeadlines[ticketData.priority]);
       const deadline = Timestamp.fromDate(deadlineDate);
 
       const ticketsRef = collection(db, 'tickets');
@@ -65,7 +60,6 @@ export const ticketService = {
         createdAt: now,
         updatedAt: now,
         deadline,
-        comments: [],
         attachments: []
       };
 
@@ -78,7 +72,6 @@ export const ticketService = {
         createdAt: now.toDate(),
         updatedAt: now.toDate(),
         deadline: deadline.toDate(),
-        comments: [],
         attachments: []
       };
 
@@ -89,26 +82,37 @@ export const ticketService = {
           const isConfigured = await clickupService.isConfigured();
           
           if (isConfigured) {
-            console.log("ClickUp configurado. Sincronizando ticket recém-criado automaticamente...");
-            const taskId = await clickupService.syncTicketWithClickUp(newTicket);
-            
-            if (taskId) {
-              console.log(`Sincronização automática bem-sucedida. ID da tarefa ClickUp: ${taskId}`);
-              // Atualizar o ticket com o taskId do ClickUp
-              const updateData = { 
-                taskId,
-                updatedAt: Timestamp.now()
-              };
+            console.log("[TicketService] ClickUp configurado. Sincronizando ticket recém-criado automaticamente...");
+            try {
+              const taskId = await clickupService.syncTicketWithClickUp(newTicket);
               
-              await updateDoc(doc(db, 'tickets', newTicket.id), updateData);
-              newTicket.taskId = taskId;
-              newTicket.updatedAt = updateData.updatedAt.toDate();
+              if (taskId) {
+                console.log(`[TicketService] Sincronização automática bem-sucedida. ID da tarefa ClickUp: ${taskId}`);
+                // Atualizar o ticket com o taskId do ClickUp
+                const updateData = { 
+                  taskId,
+                  updatedAt: Timestamp.now()
+                };
+                
+                await updateDoc(doc(db, 'tickets', newTicket.id), updateData);
+                newTicket.taskId = taskId;
+                newTicket.updatedAt = updateData.updatedAt.toDate();
+              }
+            } catch (syncError) {
+              console.error("[TicketService] Erro específico na sincronização com ClickUp:", syncError);
+              // Se o erro incluir "UUID" ou "custom_fields", é um problema com o formato do campo personalizado
+              if (syncError instanceof Error && 
+                  (syncError.message.includes('UUID') || 
+                   syncError.message.includes('custom_fields'))) {
+                console.error("[TicketService] Erro relacionado a campos personalizados. Estes foram desativados.");
+              }
+              // Não falha a criação do ticket se a sincronização falhar
             }
           } else {
-            console.log("ClickUp não está configurado. Pulando sincronização automática.");
+            console.log("[TicketService] ClickUp não está configurado. Pulando sincronização automática.");
           }
         } catch (clickupError) {
-          console.error("Erro ao sincronizar com ClickUp automaticamente:", clickupError);
+          console.error("[TicketService] Erro ao sincronizar com ClickUp automaticamente:", clickupError);
           // Não falha a criação do ticket se a sincronização falhar
         }
         
@@ -118,7 +122,7 @@ export const ticketService = {
         // Se houver resposta do webhook, atualizar o ticket
         if (webhookResponse) {
           const updates: Partial<Ticket> = {
-            updatedAt: Timestamp.now()
+            updatedAt: Timestamp.now().toDate()
           };
 
           // Atualizar taskId se retornado e se ainda não tiver sido atualizado pelo ClickUp
@@ -128,10 +132,11 @@ export const ticketService = {
 
           // Atualizar outros campos se necessário
           if (Object.keys(updates).length > 0) {
-            await updateDoc(docRef, updates);
-            Object.assign(newTicket, updates, {
-              updatedAt: updates.updatedAt?.toDate()
+            await updateDoc(docRef, {
+              ...updates,
+              updatedAt: Timestamp.now()
             });
+            Object.assign(newTicket, updates);
           }
         }
       } catch (error) {
@@ -154,7 +159,7 @@ export const ticketService = {
         throw new Error('Ticket não encontrado');
       }
 
-      const currentTicket = convertToTicket(ticketDoc);
+      const currentTicket = convertToTicket(ticketDoc as QueryDocumentSnapshot<any>);
       const now = Timestamp.now();
       
       const updates = {
@@ -167,7 +172,7 @@ export const ticketService = {
         updates.priorityLockedAt = now;
         updates.priorityReason = changes.priorityReason;
 
-        const newDeadline = new Date(now.toDate().getTime() + priorityDeadlines[changes.priority]);
+        const newDeadline = new Date(now.toMillis() + priorityDeadlines[changes.priority]);
         updates.deadline = Timestamp.fromDate(newDeadline);
       }
       
@@ -204,6 +209,7 @@ export const ticketService = {
 
   async deleteTicket(ticketId: string): Promise<void> {
     try {
+      // Verificar se o ticket existe
       const ticketRef = doc(db, 'tickets', ticketId);
       const ticketDoc = await getDoc(ticketRef);
       
@@ -211,99 +217,21 @@ export const ticketService = {
         throw new Error('Ticket não encontrado');
       }
 
-      const ticket = convertToTicket(ticketDoc);
-
-      try {
-        await webhookService.sendWebhookNotification('ticket.deleted', ticket);
-      } catch (error) {
-        console.error('Erro ao enviar webhook de exclusão:', error);
-      }
-
+      // Deletar o ticket
       await deleteDoc(ticketRef);
+
+      // Enviar notificação de webhook
+      try {
+        await webhookService.sendWebhookNotification('ticket.deleted', {
+          ticketId,
+          ticket: convertToTicket(ticketDoc as QueryDocumentSnapshot<any>)
+        });
+      } catch (error) {
+        console.error('Erro ao enviar webhook de exclusão de ticket:', error);
+      }
     } catch (error) {
       console.error('Erro ao excluir ticket:', error);
       throw new Error(error instanceof Error ? error.message : 'Erro ao excluir ticket');
-    }
-  },
-
-  async addComment(ticketId: string, commentData: Omit<Comment, 'id' | 'createdAt'>): Promise<Comment> {
-    try {
-      console.log('[TicketService] Iniciando adição de comentário para ticket:', ticketId);
-      console.log('[TicketService] Dados do comentário:', commentData);
-      
-      const ticketRef = doc(db, 'tickets', ticketId);
-      const ticketDoc = await getDoc(ticketRef);
-      
-      if (!ticketDoc.exists()) {
-        console.error('[TicketService] Ticket não encontrado:', ticketId);
-        throw new Error('Ticket não encontrado');
-      }
-      
-      console.log('[TicketService] Ticket encontrado, criando comentário');
-
-      const now = Timestamp.now();
-      const commentId = crypto.randomUUID();
-      const newComment = {
-        id: commentId,
-        ...commentData,
-        createdAt: now
-      };
-      
-      console.log('[TicketService] Novo comentário criado com ID:', commentId);
-
-      console.log('[TicketService] Atualizando documento no Firestore');
-      await updateDoc(ticketRef, {
-        comments: arrayUnion(newComment),
-        updatedAt: now
-      });
-
-      console.log('[TicketService] Documento atualizado com sucesso no Firestore');
-
-      return {
-        ...newComment,
-        createdAt: now.toDate()
-      };
-    } catch (error) {
-      console.error('[TicketService] Erro ao adicionar comentário:', error);
-      throw new Error('Erro ao adicionar comentário: ' + (error instanceof Error ? error.message : 'Erro desconhecido'));
-    }
-  },
-
-  async deleteComment(ticketId: string, commentId: string): Promise<void> {
-    try {
-      const ticketRef = doc(db, 'tickets', ticketId);
-      const ticketDoc = await getDoc(ticketRef);
-      
-      if (!ticketDoc.exists()) {
-        throw new Error('Ticket não encontrado');
-      }
-
-      const ticket = convertToTicket(ticketDoc);
-      const comment = ticket.comments?.find(c => c.id === commentId);
-
-      if (!comment) {
-        throw new Error('Comentário não encontrado');
-      }
-
-      const now = Timestamp.now();
-
-      await updateDoc(ticketRef, {
-        comments: arrayRemove(comment),
-        updatedAt: now
-      });
-
-      try {
-        await webhookService.sendWebhookNotification('ticket.comment_deleted', {
-          ticketId,
-          commentId,
-          ticket
-        });
-      } catch (error) {
-        console.error('Erro ao enviar webhook de exclusão de comentário:', error);
-      }
-    } catch (error) {
-      console.error('Erro ao excluir comentário:', error);
-      throw new Error(error instanceof Error ? error.message : 'Erro ao excluir comentário');
     }
   }
 };

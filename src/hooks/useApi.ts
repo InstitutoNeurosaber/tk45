@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { ticketApi, setApiKey as setStoredApiKey } from '../services/api';
 import type { TicketStatus, TicketPriority } from '../types/ticket';
+import { useAxios } from '../hooks/useAxios';
 
 export function useApi() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const api = useAxios();
 
   const handleRequest = async <T>(
     request: Promise<T>,
@@ -23,16 +25,14 @@ export function useApi() {
     }
   };
 
-  const createTicket = async (data: {
-    title: string;
-    description: string;
-    category: string;
-    priority: TicketPriority;
-  }) => {
-    return handleRequest(
-      ticketApi.createTicket(data),
-      'Erro ao criar ticket'
-    );
+  const createTicket = async (newTicket: Omit<Ticket, 'id'>) => {
+    try {
+      const response = await api.post('/tickets', newTicket);
+      return response.data;
+    } catch (error) {
+      console.error('Error creating ticket:', error);
+      throw error;
+    }
   };
 
   const updateStatus = async (ticketId: string, status: TicketStatus) => {
@@ -46,13 +46,6 @@ export function useApi() {
     return handleRequest(
       ticketApi.updatePriority(ticketId, { priority }),
       'Erro ao atualizar prioridade'
-    );
-  };
-
-  const addComment = async (ticketId: string, content: string, userId: string) => {
-    return handleRequest(
-      ticketApi.addComment(ticketId, { content, userId }),
-      'Erro ao adicionar comentário'
     );
   };
 
@@ -73,7 +66,6 @@ export function useApi() {
     createTicket,
     updateStatus,
     updatePriority,
-    addComment,
     deleteTicket,
     setApiKey
   };

@@ -8,7 +8,6 @@ import {
   Edit2, 
   AlertTriangle, 
   X,
-  MessageSquare,
   Calendar,
   Tag,
   ExternalLink,
@@ -22,8 +21,6 @@ import { db } from '../lib/firebase';
 import { useTicketStore } from '../stores/ticketStore';
 import { useAuthStore } from '../stores/authStore';
 import { DeleteConfirmationModal } from './DeleteConfirmationModal';
-import { TicketComments } from './TicketComments';
-import { CollaborativeComments } from './CollaborativeComments';
 import { statusLabels, priorityLabels, categoryLabels } from '../types/ticket';
 import type { Ticket, TicketStatus, TicketPriority } from '../types/ticket';
 import { clickupService } from '../services/clickupService';
@@ -197,10 +194,6 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
     }
   };
 
-  const handleViewComments = () => {
-    navigate(`/comments/${ticket.id}`);
-  };
-
   const formatDeadline = (date: Date) => {
     return new Date(date).toLocaleString('pt-BR', {
       day: '2-digit',
@@ -220,17 +213,19 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
       setClickUpSyncLoading(true);
       setClickUpSyncError(null);
       
-      console.log(`Iniciando sincronização com ClickUp para o ticket: ${ticket.id}`);
+      console.log(`[TicketDetailsModal] Iniciando sincronização com ClickUp para o ticket: ${ticket.id}`);
       
       // Verificar se o ClickUp está configurado
       try {
         const isConfigured = await clickupService.isConfigured();
         if (!isConfigured) {
+          console.error('[TicketDetailsModal] ClickUp não está configurado corretamente');
           setClickUpSyncError('O ClickUp não está configurado corretamente. Verifique as configurações.');
           setClickUpSyncLoading(false);
           return;
         }
       } catch (configError) {
+        console.error('[TicketDetailsModal] Erro ao verificar configuração:', configError);
         setClickUpSyncError('Erro ao verificar configuração do ClickUp. Verifique se as credenciais estão corretas.');
         setClickUpSyncLoading(false);
         return;
@@ -238,32 +233,50 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
       
       // Sincronizar o ticket
       try {
+        console.log('[TicketDetailsModal] Chamando syncWithClickUp');
         const updatedTicket = await syncWithClickUp(ticket);
         if (updatedTicket && updatedTicket.taskId) {
+          console.log(`[TicketDetailsModal] Sincronização bem-sucedida. taskId: ${updatedTicket.taskId}`);
           setClickUpSyncSuccess(true);
           setTimeout(() => setClickUpSyncSuccess(false), 3000);
           onUpdate(updatedTicket);
+        } else {
+          console.error('[TicketDetailsModal] Retorno vazio da sincronização');
+          throw new Error('A sincronização não retornou uma tarefa válida');
         }
       } catch (syncError) {
+        console.error('[TicketDetailsModal] Erro de sincronização:', syncError);
         throw syncError; // Propagar o erro para ser tratado abaixo
       }
     } catch (error) {
-      console.error('Exceção ao sincronizar com ClickUp:', error);
+      console.error('[TicketDetailsModal] Exceção na sincronização:', error);
       
       let errorMessage = 'Erro ao sincronizar com ClickUp.';
       
       if (error instanceof Error) {
         // Detectar erro específico de status não encontrado
-        if (error.message.includes('Status not found') || error.message.includes('Problema com o status')) {
+        if (error.message.includes('Status not found') || 
+            error.message.includes('Problema com o status') || 
+            error.message.includes('Status não encontrado')) {
           errorMessage = 'Erro: Os status no ClickUp não correspondem aos necessários. ' +
                         'Verifique se sua lista do ClickUp possui os status: ABERTO, EM ANDAMENTO, RESOLVIDO e FECHADO. ' +
                         'Crie esses status exatamente com esses nomes na sua lista do ClickUp.';
-        } else if (error.message.includes('não foi encontrada')) {
+        } else if (error.message.includes('não foi encontrada') || 
+                  error.message.includes('não encontrada') || 
+                  error.message.includes('Lista não encontrada')) {
           errorMessage = 'Erro: A lista configurada não foi encontrada no ClickUp. ' +
                         'Verifique o ID da lista nas configurações do ClickUp.';
         } else if (error.message.includes('404')) {
           errorMessage = 'Erro 404: Recurso não encontrado. ' +
-                       'Isso pode indicar que a tarefa ainda não existe no ClickUp ou que há um problema com o ID da lista.';  
+                       'Isso pode indicar que a tarefa ainda não existe no ClickUp ou que há um problema com o ID da lista.';
+        } else if (error.message.includes('API Key inválida') || 
+                  error.message.includes('401')) {
+          errorMessage = 'Erro: API Key do ClickUp inválida ou expirada. ' +
+                       'Verifique suas configurações e atualize a API Key.';
+        } else if (error.message.includes('sem permissão') || 
+                  error.message.includes('403')) {
+          errorMessage = 'Erro: Sem permissão para acessar a lista no ClickUp. ' +
+                       'Verifique se sua API Key tem permissões suficientes.';
         } else {
           errorMessage = error.message;
         }
@@ -472,25 +485,6 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                 ) : (
                   <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{description}</p>
                 )}
-              </div>
-
-              {/* Comentários */}
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <div className="space-y-6">
-                  <div>
-                    <h3 className="text-lg font-medium text-gray-900 mb-4">Comentários</h3>
-                  </div>
-
-                  <TicketComments 
-                    ticket={ticket}
-                    onCommentAdded={(comment) => {
-                      onUpdate({
-                        ...ticket,
-                        comments: [...(ticket.comments || []), comment]
-                      });
-                    }}
-                  />
-                </div>
               </div>
             </div>
 

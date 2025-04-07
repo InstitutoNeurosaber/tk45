@@ -1,6 +1,12 @@
-import type { Ticket, Comment } from '../types/ticket';
-
-const CLICKUP_API_BASE = 'https://api.clickup.com/api/v2';
+import type { Ticket } from '../types/ticket';
+import { 
+  CLICKUP_API_BASE, 
+  STATUS_MAP, 
+  PRIORITY_MAP, 
+  TICKET_ID_FIELD_NAME,
+  ERROR_MESSAGES, 
+  isValidTicketId
+} from '../constants/clickup';
 
 export class ClickUpAPI {
   private apiKey: string;
@@ -11,6 +17,8 @@ export class ClickUpAPI {
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     try {
+      console.log(`[ClickUp] Requisição para: ${CLICKUP_API_BASE}${endpoint}`);
+      
       const response = await fetch(`${CLICKUP_API_BASE}${endpoint}`, {
         ...options,
         headers: {
@@ -26,49 +34,43 @@ export class ClickUpAPI {
         
         try {
           errorDetails = await response.json();
-          console.error("Resposta de erro da API do ClickUp:", errorDetails);
+          console.error("[ClickUp] Resposta de erro:", errorDetails);
         } catch (parseError) {
-          console.error("Não foi possível analisar a resposta de erro:", parseError);
-          // Se não conseguirmos analisar o JSON, usamos o erro genérico
+          console.error("[ClickUp] Não foi possível analisar a resposta de erro:", parseError);
           errorDetails = { err: `Erro ${response.status}: ${response.statusText}` };
         }
         
-        // Trata erros conhecidos com mensagens amigáveis
-        if (response.status === 401) {
-          throw new Error('API Key inválida ou expirada');
-        }
-        if (response.status === 403) {
-          throw new Error('Team not authorized');
-        }
-        if (response.status === 404) {
-          throw new Error('Recurso não encontrado');
-        }
-        if (response.status === 400) {
-          // Para erros 400, tentamos extrair informações mais detalhadas
-          if (errorDetails.err) {
-            if (errorDetails.err.includes('Status not found')) {
-              throw new Error('Status not found');
+        // Trata erros conhecidos com mensagens padronizadas
+        switch (response.status) {
+          case 401:
+            throw new Error(ERROR_MESSAGES.INVALID_API_KEY);
+          case 403:
+            throw new Error(ERROR_MESSAGES.UNAUTHORIZED);
+          case 404:
+            throw new Error(ERROR_MESSAGES.LIST_NOT_FOUND);
+          case 400:
+            // Para erros 400, tentamos extrair informações mais detalhadas
+            if (errorDetails.err && errorDetails.err.includes('Status not found')) {
+              throw new Error(ERROR_MESSAGES.STATUS_NOT_FOUND);
             }
-            throw new Error(errorDetails.err);
-          }
-          
-          // Mensagem genérica para erro 400 se não tiver detalhes
-          throw new Error(`Erro 400: Bad Request - ${response.statusText}`);
+            throw new Error(errorDetails.err || `Erro 400: ${response.statusText}`);
+          default:
+            const errorMessage = errorDetails.err || errorDetails.message || 
+                                `Erro ${response.status}: ${response.statusText}`;
+            throw new Error(errorMessage);
         }
-        
-        // Se chegarmos aqui, é um erro não tratado especificamente
-        const errorMessage = errorDetails.err || errorDetails.message || `Erro ${response.status}: ${response.statusText}`;
-        throw new Error(errorMessage);
       }
 
-      return response.json();
+      const data = await response.json();
+      console.log(`[ClickUp] Resposta recebida para ${endpoint}`);
+      return data;
     } catch (error) {
-      console.error("Erro no request do ClickUp:", error);
+      console.error("[ClickUp] Erro na requisição:", error);
       
       if (error instanceof Error) {
         throw error;
       }
-      throw new Error('Erro desconhecido na requisição ao ClickUp');
+      throw new Error(ERROR_MESSAGES.DEFAULT_ERROR);
     }
   }
 
@@ -90,7 +92,7 @@ export class ClickUpAPI {
       await this.request<{ id: string }>(`/task/${taskId}`);
       return true;
     } catch (error) {
-      if (error instanceof Error && error.message.includes('Recurso não encontrado')) {
+      if (error instanceof Error && error.message.includes('não encontrada')) {
         return false;
       }
       throw error;
@@ -99,38 +101,29 @@ export class ClickUpAPI {
 
   // Cria uma nova tarefa no ClickUp
   async createTask(listId: string, ticket: Partial<Ticket> | any) {
-    console.log(`Iniciando criação de tarefa na lista ${listId} para o ticket:`, ticket.id);
+    console.log(`[ClickUp] Iniciando criação de tarefa na lista ${listId} para o ticket:`, 
+                ticket.id || 'Novo ticket');
     
     // Verificar se o listId não está vazio
     if (!listId || listId.trim() === '') {
-      throw new Error('ID da lista do ClickUp não especificado');
+      throw new Error(ERROR_MESSAGES.LIST_ID_REQUIRED);
     }
     
-    const priorityMap: Record<string, number> = {
-      low: 3,
-      medium: 2,
-      high: 1,
-      critical: 4
-    };
-
     // Adicionar ID personalizado para rastreamento
-    const isValidForCustomField = (id: string | undefined) => {
-      return typeof id === 'string' && id.length > 0;
-    };
-    
     const customFields = [];
     
-    if (isValidForCustomField(ticket.id)) {
+    if (isValidTicketId(ticket.id)) {
       customFields.push({
-        id: "ticket_id",
-        value: `ticket-${Date.now()}` // Usando timestamp em vez do ID diretamente
+        id: TICKET_ID_FIELD_NAME,
+        value: `ticket-${ticket.id.substring(0, 10)}`
       });
     }
 
     // Determinar a prioridade corretamente
-    let priority = priorityMap.medium; // Valor padrão
-    if (ticket.priority && typeof ticket.priority === 'string' && priorityMap[ticket.priority] !== undefined) {
-      priority = priorityMap[ticket.priority];
+    let priority = PRIORITY_MAP.medium; // Valor padrão
+    if (ticket.priority && typeof ticket.priority === 'string' && 
+        PRIORITY_MAP[ticket.priority as keyof typeof PRIORITY_MAP] !== undefined) {
+      priority = PRIORITY_MAP[ticket.priority as keyof typeof PRIORITY_MAP];
     }
     
     // Garantir que a data esteja no formato correto (timestamp)
@@ -140,56 +133,31 @@ export class ClickUpAPI {
         dueDate = ticket.deadline.getTime();
       } else {
         try {
-          // Tenta converter a string para Date e depois para timestamp
           const date = new Date(ticket.deadline);
           dueDate = date.getTime();
           if (isNaN(dueDate)) {
-            console.warn("Data inválida:", ticket.deadline);
+            console.warn("[ClickUp] Data inválida:", ticket.deadline);
             dueDate = null;
           }
         } catch (error) {
-          console.warn("Não foi possível converter deadline para timestamp:", error);
+          console.warn("[ClickUp] Não foi possível converter deadline para timestamp:", error);
         }
       }
     }
     
-    // Mapear o status corretamente
-    let status = 'to do'; // Valor padrão
+    // Mapear o status corretamente usando a constante padronizada
+    let status = STATUS_MAP.open; // Valor padrão
     
-    // Verificar se temos um status para usar
-    if (ticket.status) {
-      // Mapeamento de status do sistema para o ClickUp
-      // Importante: Estes devem corresponder EXATAMENTE aos nomes de status no ClickUp
-      console.log(`Mapeando status: ${ticket.status} para o formato do ClickUp`);
-      
-      switch (ticket.status) {
-        case 'open':
-          status = 'ABERTO';
-          break;
-        case 'in_progress':
-          status = 'EM ANDAMENTO';
-          break;
-        case 'resolved':
-          status = 'RESOLVIDO';
-          break;
-        case 'closed':
-          status = 'FECHADO';
-          break;
-        default:
-          console.warn(`Status desconhecido: ${ticket.status}, usando status padrão 'ABERTO'`);
-          status = 'ABERTO';
-      }
-      console.log(`Status mapeado para: ${status}`);
+    if (ticket.status && STATUS_MAP[ticket.status as keyof typeof STATUS_MAP]) {
+      status = STATUS_MAP[ticket.status as keyof typeof STATUS_MAP];
+      console.log(`[ClickUp] Status mapeado: ${ticket.status} -> ${status}`);
     }
     
-    console.log(`Enviando requisição para criar tarefa: ${CLICKUP_API_BASE}/list/${listId}/task`);
-    console.log("Dados da tarefa:", {
-      name: ticket.title || ticket.name,
-      description: ticket.description || "Sem descrição",
-      priority: priority,
-      due_date: dueDate,
+    console.log(`[ClickUp] Dados da tarefa a ser criada:`, {
+      name: ticket.title || ticket.name || "Novo Ticket",
       status: status,
-      custom_fields: customFields
+      priority: priority,
+      due_date: dueDate
     });
 
     try {
@@ -200,45 +168,21 @@ export class ClickUpAPI {
           description: ticket.description || "Sem descrição",
           priority: priority,
           due_date: dueDate,
-          status: status,
-          custom_fields: customFields
+          status: status
         })
       });
       
-      console.log("Resposta da criação de tarefa:", response);
+      console.log("[ClickUp] Tarefa criada com sucesso:", response);
       return response;
     } catch (error) {
-      console.error("Erro ao criar tarefa:", error);
-      if (error instanceof Error) {
-        if (error.message.includes('Status not found')) {
-          // Erro específico de status não encontrado
-          throw new Error(`Erro de status: O status "${status}" não existe na lista configurada no ClickUp. ` +
-                          `Verifique se você tem os seguintes status criados no ClickUp: ABERTO, EM ANDAMENTO, RESOLVIDO, FECHADO.`);
-        } else if (error.message.includes('Recurso não encontrado')) {
-          throw new Error(`A lista com ID ${listId} não foi encontrada no ClickUp. Verifique a configuração.`);
-        } else if (error.message.includes('404')) {
-          throw new Error(`Erro 404: Lista não encontrada (ID: ${listId}). Verifique se o ID está correto.`);
-        } else if (error.message.includes('403')) {
-          throw new Error('Erro 403: Sem permissão para acessar esta lista. Verifique suas permissões no ClickUp.');
-        } else if (error.message.includes('401')) {
-          throw new Error('Erro 401: API Key inválida ou expirada. Verifique sua configuração do ClickUp.');
-        } else if (error.message.includes('400')) {
-          // Tentar extrair mais informações do erro
-          const errorMessage = error.message;
-          if (errorMessage.includes('Status')) {
-            throw new Error(`Erro 400: Problema com o status. O status "${status}" não existe na lista do ClickUp. ` +
-                          `Crie os status ABERTO, EM ANDAMENTO, RESOLVIDO e FECHADO na sua lista do ClickUp.`);
-          } else {
-            throw new Error(`Erro 400: Requisição inválida. Verifique os dados enviados e a configuração do ClickUp. ${errorMessage}`);
-          }
-        }
-      }
-      throw error;
+      console.error("[ClickUp] Erro ao criar tarefa:", error);
+      throw error; // Já tratado em request()
     }
   }
 
   // Atualiza o status de uma tarefa
   async updateTaskStatus(taskId: string, status: string) {
+    console.log(`[ClickUp] Atualizando status da tarefa ${taskId} para ${status}`);
     return this.request(`/task/${taskId}`, {
       method: 'PUT',
       body: JSON.stringify({
@@ -255,6 +199,7 @@ export class ClickUpAPI {
     due_date?: number;
     status?: string;
   }) {
+    console.log(`[ClickUp] Atualizando tarefa ${taskId}:`, data);
     return this.request(`/task/${taskId}`, {
       method: 'PUT',
       body: JSON.stringify(data)
@@ -263,30 +208,26 @@ export class ClickUpAPI {
 
   // Deleta uma tarefa
   async deleteTask(taskId: string) {
+    console.log(`[ClickUp] Excluindo tarefa ${taskId}`);
     return this.request(`/task/${taskId}`, {
       method: 'DELETE'
     });
   }
 
-  // Adiciona um comentário a uma tarefa
-  async addComment(taskId: string, comment: { content: string; userId?: string; ticketId?: string }) {
-    return this.request(`/task/${taskId}/comment`, {
-      method: 'POST',
-      body: JSON.stringify({
-        comment_text: comment.content,
-        assignee: comment.userId || null,
-        notify_all: true
-      })
-    });
-  }
-
   // Busca tarefas em uma lista por status
   async getTasksByStatus(listId: string, status: string) {
+    console.log(`[ClickUp] Buscando tarefas com status ${status} na lista ${listId}`);
     return this.request<{ tasks: any[] }>(`/list/${listId}/task?statuses[]=${encodeURIComponent(status)}`);
   }
 
   // Busca todas as tarefas em uma lista
   async getAllTasks(listId: string) {
+    console.log(`[ClickUp] Buscando todas as tarefas da lista ${listId}`);
     return this.request<{ tasks: any[] }>(`/list/${listId}/task`);
   }
 }
+
+// Estas funções não são utilizadas, foram removidas para evitar código morto
+// export const getTicketDetails = async (ticketId: string): Promise<Ticket | null> => { ... };
+// export const updateTicketStatus = async (ticketId: string, status: TicketStatus): Promise<boolean> => { ... };
+// export const updateTicketPriority = async (ticketId: string, priority: string): Promise<boolean> => { ... };

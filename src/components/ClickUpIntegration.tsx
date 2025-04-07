@@ -4,6 +4,7 @@ import { useClickUpStore } from '../stores/clickupStore';
 import { useAuthStore } from '../stores/authStore';
 import { useTicketStore } from '../stores/ticketStore';
 import { Loader2, RefreshCw, Link, CheckCircle2, AlertCircle } from 'lucide-react';
+import { STATUS_MAP, ERROR_MESSAGES } from '../constants/clickup';
 
 export function ClickUpIntegration() {
   const { user } = useAuthStore();
@@ -30,15 +31,17 @@ export function ClickUpIntegration() {
       setLoading(true);
       setSyncStatus({ status: 'idle', message: '' });
       
+      console.log(`[ClickUpIntegration] Buscando tarefas da lista ${config.listId}`);
       const clickup = new ClickUpAPI(config.apiKey);
       const response = await clickup.getAllTasks(config.listId);
       
       setTasks(response.tasks || []);
+      console.log(`[ClickUpIntegration] ${response.tasks?.length || 0} tarefas encontradas`);
     } catch (error) {
-      console.error('Erro ao buscar tarefas do ClickUp:', error);
+      console.error('[ClickUpIntegration] Erro ao buscar tarefas:', error);
       setSyncStatus({ 
         status: 'error', 
-        message: error instanceof Error ? error.message : 'Erro ao buscar tarefas do ClickUp' 
+        message: error instanceof Error ? error.message : ERROR_MESSAGES.DEFAULT_ERROR
       });
     } finally {
       setLoading(false);
@@ -58,49 +61,61 @@ export function ClickUpIntegration() {
     try {
       setSyncStatus({ status: 'syncing', message: 'Sincronizando tickets com o ClickUp...' });
       
+      console.log(`[ClickUpIntegration] Iniciando sincronização de ${tickets.length} tickets`);
       const clickup = new ClickUpAPI(config.apiKey);
       let successCount = 0;
       let errorCount = 0;
       
       // Buscar tarefas existentes para comparação
+      console.log(`[ClickUpIntegration] Buscando tarefas existentes na lista ${config.listId}`);
       const response = await clickup.getAllTasks(config.listId);
       const existingTasks = response.tasks || [];
-      const existingTaskIds = new Set(existingTasks.map(task => {
-        // Tentar encontrar o ID do ticket nos campos personalizados
-        const ticketIdField = task.custom_fields?.find((field: any) => field.name === "ticket_id");
-        return ticketIdField?.value || null;
-      }).filter(Boolean));
+      
+      // Criar um mapa de tarefas pelo ID do ticket para busca mais eficiente
+      const taskMap = new Map();
+      
+      // Verificar campos personalizados nas tarefas
+      existingTasks.forEach(task => {
+        if (task.custom_fields) {
+          // Ao invés de usar o campo personalizado para mapear, vamos usar o título do ticket
+          // para tentar encontrar a tarefa correspondente
+          taskMap.set(task.id, task);
+          
+          // Também mapeamos pelo nome para facilitar a busca
+          if (task.name) {
+            taskMap.set(task.name, task);
+          }
+        }
+      });
+      
+      console.log(`[ClickUpIntegration] Encontradas ${existingTasks.length} tarefas existentes`);
       
       // Processar cada ticket
       for (const ticket of tickets) {
         try {
-          // Verificar se já existe tarefa para este ticket
-          if (existingTaskIds.has(ticket.id)) {
+          // Verificar se já existe tarefa para este ticket pelo nome (em vez de custom_fields)
+          const ticketTitle = ticket.title;
+          
+          // Procurar a tarefa pelo título ou ID do ticket 
+          const existingTask = taskMap.get(ticketTitle) || taskMap.get(ticket.id);
+          
+          if (existingTask) {
             // Atualizar tarefa existente
-            // Para simplificar, apenas atualizamos o status
-            const taskId = existingTasks.find((task: any) => {
-              const ticketIdField = task.custom_fields?.find((field: any) => field.name === "ticket_id");
-              return ticketIdField?.value === ticket.id;
-            })?.id;
+            console.log(`[ClickUpIntegration] Atualizando tarefa existente para ticket ${ticket.id}`);
             
-            if (taskId) {
-              const statusMap: Record<string, string> = {
-                'open': 'to do',
-                'in_progress': 'in progress',
-                'resolved': 'complete',
-                'closed': 'closed'
-              };
-              
-              await clickup.updateTaskStatus(taskId, statusMap[ticket.status] || 'to do');
-            }
+            // Mapear o status usando a constante padronizada
+            const clickupStatus = STATUS_MAP[ticket.status as keyof typeof STATUS_MAP] || STATUS_MAP.open;
+            
+            await clickup.updateTaskStatus(existingTask.id, clickupStatus);
+            successCount++;
           } else {
             // Criar nova tarefa
+            console.log(`[ClickUpIntegration] Criando nova tarefa para ticket ${ticket.id}`);
             await clickup.createTask(config.listId, ticket);
+            successCount++;
           }
-          
-          successCount++;
         } catch (error) {
-          console.error(`Erro ao sincronizar ticket ${ticket.id}:`, error);
+          console.error(`[ClickUpIntegration] Erro ao sincronizar ticket ${ticket.id}:`, error);
           errorCount++;
         }
       }
@@ -115,10 +130,10 @@ export function ClickUpIntegration() {
         fetchTasks();
       }
     } catch (error) {
-      console.error('Erro na sincronização:', error);
+      console.error('[ClickUpIntegration] Erro na sincronização:', error);
       setSyncStatus({ 
         status: 'error', 
-        message: error instanceof Error ? error.message : 'Erro ao sincronizar com o ClickUp' 
+        message: error instanceof Error ? error.message : ERROR_MESSAGES.DEFAULT_ERROR
       });
     }
   };
@@ -233,27 +248,29 @@ export function ClickUpIntegration() {
                       className="w-3 h-3 rounded-full mr-4"
                       style={{ 
                         backgroundColor: 
-                          task.status?.status === 'complete' ? '#10B981' :
-                          task.status?.status === 'in progress' ? '#F59E0B' :
-                          '#EF4444'
+                          task.status?.status === 'RESOLVIDO' || task.status?.status === 'complete' ? '#10B981' :
+                          task.status?.status === 'EM ANDAMENTO' || task.status?.status === 'in progress' ? '#F59E0B' :
+                          task.status?.status === 'FECHADO' || task.status?.status === 'closed' ? '#6B7280' :
+                          '#3B82F6'
                       }}
+                      aria-label={`Status: ${task.status?.status}`}
                     />
                     <div>
                       <h3 className="text-sm font-medium text-gray-900">{task.name}</h3>
                       <p className="text-xs text-gray-500">
                         Status: {task.status?.status || 'Não definido'}
-                        {task.due_date && ` • Prazo: ${new Date(task.due_date).toLocaleDateString()}`}
+                        {task.due_date && ` • Prazo: ${new Date(task.due_date).toLocaleDateString('pt-BR')}`}
                       </p>
                     </div>
                   </div>
                   <a 
                     href={task.url} 
-                    target="_blank" 
+                    target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm text-blue-600 hover:text-blue-800"
+                    className="inline-flex items-center px-2.5 py-1.5 border border-gray-300 shadow-sm text-xs font-medium rounded text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
                   >
+                    <Link className="h-3 w-3 mr-1" />
                     Ver no ClickUp
-                    <span className="ml-1">&#8599;</span>
                   </a>
                 </div>
               </li>
