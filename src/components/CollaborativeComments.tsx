@@ -1,13 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, User, AlertCircle, Image as ImageIcon, RefreshCw } from 'lucide-react';
-import { useCollaborativeComments } from '../hooks/useCollaborativeComments';
+import { Send, User, AlertCircle, Image as ImageIcon } from 'lucide-react';
+import { useCollaborativeComments } from '../hooks';
 import { useAuthStore } from '../stores/authStore';
 import { useTicketStore } from '../stores/ticketStore';
 import { storage } from '../lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { v4 as uuidv4 } from 'uuid';
 import type { Ticket, Comment } from '../types/ticket';
-import { clickupService } from '../services/clickupService';
 
 interface CollaborativeCommentsProps {
   ticket: Ticket;
@@ -19,8 +18,6 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
   const { addComment: addTicketComment } = useTicketStore();
   const [newComment, setNewComment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
-  const [isSyncing, setIsSyncing] = useState(false);
   const commentListRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,45 +36,12 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
     }
   }, [comments]);
 
-  // Sincronizar comentários com o ClickUp
-  const syncWithClickUp = async () => {
-    if (!ticket.taskId) return;
-    
-    setIsSyncing(true);
-    setSyncError(null);
-
-    try {
-      const isConfigured = await clickupService.isConfigured();
-      if (!isConfigured) {
-        setSyncError('Integração com ClickUp não configurada');
-        return;
-      }
-
-      // Buscar comentários do ClickUp
-      const clickupComments = await clickupService.getComments(ticket.taskId);
-      
-      // Comparar e adicionar comentários que não existem no sistema
-      for (const clickupComment of clickupComments) {
-        const exists = comments.some(c => c.id === clickupComment.id);
-        if (!exists) {
-          await addComment(clickupComment);
-        }
-      }
-    } catch (error) {
-      console.error('Erro ao sincronizar com ClickUp:', error);
-      setSyncError('Erro ao sincronizar comentários com o ClickUp');
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim() || isSubmitting || !user || !userData) return;
 
     setIsSubmitting(true);
     setError(null);
-    setSyncError(null);
 
     try {
       const comment = {
@@ -85,7 +49,9 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
         userId: user.uid,
         userName: userData.name,
         ticketId: ticket.id,
-        createdAt: new Date()
+        createdAt: new Date(),
+        type: 'text' as const,
+        status: 'sending' as const
       };
 
       // Adicionar comentário localmente
@@ -93,19 +59,6 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
       
       if (onCommentAdded) {
         onCommentAdded(savedComment);
-      }
-
-      // Sincronizar com ClickUp se houver taskId
-      if (ticket.taskId) {
-        try {
-          const isConfigured = await clickupService.isConfigured();
-          if (isConfigured) {
-            await clickupService.addComment(ticket.taskId, savedComment);
-          }
-        } catch (syncError) {
-          console.error('Erro ao sincronizar com ClickUp:', syncError);
-          setSyncError('Erro ao sincronizar comentário com o ClickUp');
-        }
       }
       
       setNewComment('');
@@ -123,7 +76,6 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
 
     setIsSubmitting(true);
     setError(null);
-    setSyncError(null);
 
     try {
       for (const file of files) {
@@ -140,24 +92,19 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
           userId: user.uid,
           userName: userData.name,
           ticketId: ticket.id,
-          createdAt: new Date()
+          createdAt: new Date(),
+          type: 'image' as const,
+          status: 'sending' as const,
+          metadata: {
+            fileName: file.name,
+            fileSize: file.size,
+            mimeType: file.type,
+            imageUrl: imageUrl
+          }
         });
 
         if (onCommentAdded) {
           onCommentAdded(comment);
-        }
-
-        // Sincronizar com ClickUp se houver taskId
-        if (ticket.taskId) {
-          try {
-            const isConfigured = await clickupService.isConfigured();
-            if (isConfigured) {
-              await clickupService.addComment(ticket.taskId, comment);
-            }
-          } catch (syncError) {
-            console.error('Erro ao sincronizar imagem com ClickUp:', syncError);
-            setSyncError('Erro ao sincronizar imagem com o ClickUp');
-          }
         }
       }
     } catch (error) {
@@ -199,28 +146,9 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
 
   return (
     <div className="flex flex-col h-full bg-gray-50">
-      {/* Cabeçalho com botão de sincronização */}
+      {/* Cabeçalho */}
       <div className="flex items-center justify-between p-4 bg-white border-b border-gray-200">
         <h3 className="text-lg font-medium text-gray-900">Comentários</h3>
-        {ticket.taskId && (
-          <button
-            onClick={syncWithClickUp}
-            disabled={isSyncing}
-            className="inline-flex items-center px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-          >
-            {isSyncing ? (
-              <>
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                Sincronizando...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Sincronizar com ClickUp
-              </>
-            )}
-          </button>
-        )}
       </div>
 
       {/* Lista de Comentários */}
@@ -229,7 +157,7 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
         className="flex-1 overflow-y-auto p-4 space-y-4"
         style={{ height: '500px' }}
       >
-        {comments.map((comment) => (
+        {comments.map((comment: Comment) => (
           <div 
             key={comment.id}
             className="bg-white rounded-lg shadow-sm p-4 border border-gray-200"
@@ -262,9 +190,9 @@ export function CollaborativeComments({ ticket, onCommentAdded }: CollaborativeC
 
       {/* Formulário de Novo Comentário */}
       <div className="p-4 bg-white border-t border-gray-200">
-        {(error || syncError) && (
+        {error && (
           <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-md">
-            {error || syncError}
+            {error}
           </div>
         )}
         

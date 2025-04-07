@@ -10,14 +10,32 @@ export interface DeadlineHistory {
   extendedAt: Date;
 }
 
-export interface Comment {
+export type MessageType = 'text' | 'image' | 'file';
+export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'error';
+
+export interface Message {
   id: string;
-  ticketId: string;
-  userId: string;
-  userName?: string;
   content: string;
+  type: MessageType;
+  status: MessageStatus;
+  userId: string;
+  userName: string;
+  ticketId: string;
   createdAt: Date;
-  status?: 'enviando' | 'enviado' | 'erro';
+  updatedAt?: Date;
+  deletedAt?: Date;
+  replyTo?: string; // ID da mensagem que está sendo respondida
+  metadata?: {
+    fileName?: string;
+    fileSize?: number;
+    mimeType?: string;
+    imageUrl?: string;
+    thumbnailUrl?: string;
+  };
+}
+
+export interface Comment extends Message {
+  // Campos específicos de comentários, se necessário
 }
 
 export interface Attachment {
