@@ -3,6 +3,17 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  build: {
+    chunkSizeWarningLimit: 3000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'recharts'],
+          firebase: ['firebase/app', 'firebase/firestore', 'firebase/auth', 'firebase/storage'],
+        }
+      }
+    }
+  },
   optimizeDeps: {
     include: [
       '@tiptap/core',
