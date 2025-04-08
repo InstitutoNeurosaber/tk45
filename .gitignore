@@ -30,6 +30,7 @@ firebase-debug.log
 
 # Netlify Functions TypeScript
 netlify/functions/*.ts
+netlify/functions/**/*.ts
 !netlify/functions/node_modules
 
 # Local Netlify folder

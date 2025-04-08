@@ -1,0 +1,2 @@
+netlify/functions/*.ts
+netlify/functions/**/*.ts 

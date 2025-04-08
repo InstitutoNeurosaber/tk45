@@ -1,15 +1,33 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import path from 'path';
 
 export default defineConfig({
   plugins: [react()],
   build: {
-    chunkSizeWarningLimit: 3000,
+    outDir: 'dist',
+    chunkSizeWarningLimit: 2500,
     rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+      },
+      external: [
+        // Ignorar arquivos em netlify/functions
+        /^netlify\/functions\/.*/
+      ],
       output: {
         manualChunks: {
-          vendor: ['react', 'react-dom', 'recharts'],
-          firebase: ['firebase/app', 'firebase/firestore', 'firebase/auth', 'firebase/storage'],
+          vendor: [
+            'react',
+            'react-dom',
+            'react-router-dom'
+          ],
+          firebase: [
+            'firebase/app',
+            'firebase/auth',
+            'firebase/firestore',
+            'firebase/storage'
+          ]
         }
       }
     }
@@ -36,7 +54,7 @@ export default defineConfig({
       'prosemirror-transform',
       'prosemirror-view'
     ],
-    exclude: ['lucide-react']
+    exclude: ['lucide-react', 'netlify/functions']
   },
   resolve: {
     dedupe: ['react', 'react-dom']
