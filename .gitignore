@@ -23,5 +23,14 @@ dist-ssr
 *.sln
 *.sw?
 
+# Firebase
+.firebase/
+firebase-debug.log
+.runtimeconfig.json
+
+# Netlify Functions TypeScript
+netlify/functions/*.ts
+!netlify/functions/node_modules
+
 # Local Netlify folder
 .netlify

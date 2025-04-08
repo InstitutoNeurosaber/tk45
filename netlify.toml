@@ -1,11 +1,13 @@
 [build]
-  command = "npm run build"
+  command = "find netlify/functions -name \"*.ts\" -type f -delete && npm run build"
   publish = "dist"
   functions = "netlify/functions"
 
 [functions]
   node_bundler = "esbuild"
   external_node_modules = ["firebase", "firebase-admin"]
+  included_files = ["netlify/functions/*.js", "netlify/functions/package.json", "netlify/functions/package-lock.json"]
+  excluded_files = ["netlify/functions/*.ts"]
   
 [[redirects]]
   from = "/*"
