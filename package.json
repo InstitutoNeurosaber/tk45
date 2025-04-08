@@ -14,7 +14,10 @@
     "test:coverage": "vitest run --coverage",
     "postinstall": "cd netlify/functions && npm install",
     "netlify:clean": "npm run clean-bom && rm -f netlify/functions/*.ts || true && find netlify/functions -name \"*.ts\" -type f -delete || true",
-    "netlify:build": "npm run netlify:clean && npm run build && cd netlify/functions && npm install"
+    "netlify:build": "npm run netlify:clean && npm run build && cd netlify/functions && npm install",
+    "prepare-deploy": "node scripts/prepare-deploy.js",
+    "deploy:preview": "npm run prepare-deploy && netlify deploy",
+    "deploy:prod": "npm run prepare-deploy && netlify deploy --prod"
   },
   "dependencies": {
     "@chatscope/chat-ui-kit-react": "^2.0.3",
