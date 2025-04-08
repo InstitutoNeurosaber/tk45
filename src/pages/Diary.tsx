@@ -57,7 +57,18 @@ import type { DiaryEntry } from '../types/diary';
 export function DiaryPage() {
   const navigate = useNavigate();
   const { user, userData } = useAuthStore();
-  const { entries, createEntry, updateEntry, deleteEntry, loading, error, fetchEntries } = useDiaryStore();
+  const { 
+    entries, 
+    adminUsers,
+    createEntry, 
+    updateEntry, 
+    deleteEntry, 
+    loading, 
+    error, 
+    fetchEntries,
+    fetchAdminUsers,
+    shareEntry
+  } = useDiaryStore();
   const [selectedEntry, setSelectedEntry] = useState<DiaryEntry | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showShareModal, setShowShareModal] = useState(false);
@@ -66,6 +77,8 @@ export function DiaryPage() {
   const [isPublic, setIsPublic] = useState(false);
   const [title, setTitle] = useState('');
   const [tempTitle, setTempTitle] = useState('');
+  const [selectedAdmins, setSelectedAdmins] = useState<string[]>([]);
+  const [sharing, setSharing] = useState(false);
 
   const editor = useEditor({
     extensions: [
@@ -106,6 +119,7 @@ export function DiaryPage() {
       setTitle(selectedEntry.title);
       setTempTitle(selectedEntry.title);
       setIsPublic(selectedEntry.isPublic);
+      setSelectedAdmins(selectedEntry.sharedWith || []);
       
       if (editor) {
         editor.commands.setContent(selectedEntry.content);
@@ -132,6 +146,13 @@ export function DiaryPage() {
       console.error('Erro ao salvar entrada:', error);
     }
   };
+
+  // Carregar administradores quando necessário
+  useEffect(() => {
+    if (showShareModal) {
+      fetchAdminUsers();
+    }
+  }, [showShareModal, fetchAdminUsers]);
 
   // Carregar entradas quando o usuário estiver autenticado
   useEffect(() => {
@@ -192,6 +213,44 @@ export function DiaryPage() {
     } catch (error) {
       console.error('Erro ao excluir entrada:', error);
     }
+  };
+
+  // Salvar compartilhamento
+  const handleSaveSharing = async () => {
+    if (!selectedEntry) return;
+
+    try {
+      setSharing(true);
+      
+      // Atualizar compartilhamento
+      await shareEntry(selectedEntry.id, selectedAdmins);
+      
+      // Atualizar status público
+      if (isPublic !== selectedEntry.isPublic) {
+        await updateEntry(selectedEntry.id, { isPublic });
+      }
+      
+      setSelectedEntry(prev => 
+        prev ? { ...prev, sharedWith: selectedAdmins, isPublic } : null
+      );
+      
+      setShowShareModal(false);
+    } catch (error) {
+      console.error('Erro ao salvar compartilhamento:', error);
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  // Manipulador para seleção de administradores
+  const handleAdminSelection = (userId: string) => {
+    setSelectedAdmins(prev => {
+      if (prev.includes(userId)) {
+        return prev.filter(id => id !== userId);
+      } else {
+        return [...prev, userId];
+      }
+    });
   };
 
   if (!editor) {
@@ -528,26 +587,56 @@ export function DiaryPage() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Compartilhar com outros usuários
+                    Compartilhar com administradores
                   </label>
-                  <select
-                    multiple
-                    className="w-full rounded-md border-gray-300 dark:border-gray-600 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-                  >
-                    <option value="user1">Usuário 1</option>
-                    <option value="user2">Usuário 2</option>
-                  </select>
+                  
+                  {loading ? (
+                    <div className="flex justify-center py-4">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
+                    </div>
+                  ) : adminUsers.length > 0 ? (
+                    <div className="max-h-48 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded-md divide-y divide-gray-200 dark:divide-gray-700">
+                      {adminUsers
+                        .filter(admin => admin.id !== user?.uid) // Filtrar o usuário atual
+                        .map(admin => (
+                          <div 
+                            key={admin.id} 
+                            className="flex items-center p-3 hover:bg-gray-50 dark:hover:bg-gray-700"
+                          >
+                            <input
+                              type="checkbox"
+                              id={`admin-${admin.id}`}
+                              checked={selectedAdmins.includes(admin.id)}
+                              onChange={() => handleAdminSelection(admin.id)}
+                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            />
+                            <label 
+                              htmlFor={`admin-${admin.id}`}
+                              className="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                            >
+                              {admin.name} ({admin.email})
+                            </label>
+                          </div>
+                        ))
+                      }
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500 dark:text-gray-400 py-2">
+                      Nenhum outro administrador encontrado.
+                    </p>
+                  )}
                 </div>
 
                 <div className="flex items-center">
                   <input
                     type="checkbox"
+                    id="isPublic"
                     checked={isPublic}
                     onChange={(e) => setIsPublic(e.target.checked)}
                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
-                  <label className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                    Tornar público
+                  <label htmlFor="isPublic" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
+                    Tornar público para todos os administradores
                   </label>
                 </div>
               </div>
@@ -557,17 +646,23 @@ export function DiaryPage() {
               <button
                 onClick={() => setShowShareModal(false)}
                 className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
+                disabled={sharing}
               >
                 Cancelar
               </button>
               <button
-                onClick={() => {
-                  // Implementar lógica de compartilhamento
-                  setShowShareModal(false);
-                }}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md"
+                onClick={handleSaveSharing}
+                disabled={sharing}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md flex items-center"
               >
-                Compartilhar
+                {sharing ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Salvando...
+                  </>
+                ) : (
+                  'Compartilhar'
+                )}
               </button>
             </div>
           </div>

@@ -1,20 +1,24 @@
 import { create } from 'zustand';
 import { diaryService } from '../services/diaryService';
 import type { DiaryEntry } from '../types/diary';
+import type { User } from '../types/user';
 
 interface DiaryState {
   entries: DiaryEntry[];
+  adminUsers: User[];
   loading: boolean;
   error: string | null;
   createEntry: (entry: Omit<DiaryEntry, 'id' | 'createdAt' | 'updatedAt'>) => Promise<DiaryEntry>;
   updateEntry: (id: string, changes: Partial<DiaryEntry>) => Promise<void>;
   deleteEntry: (id: string) => Promise<void>;
   fetchEntries: (userId: string) => Promise<void>;
+  fetchAdminUsers: () => Promise<void>;
   shareEntry: (entryId: string, userIds: string[]) => Promise<void>;
 }
 
 export const useDiaryStore = create<DiaryState>((set, get) => ({
   entries: [],
+  adminUsers: [],
   loading: false,
   error: null,
 
@@ -79,6 +83,18 @@ export const useDiaryStore = create<DiaryState>((set, get) => ({
       set({ entries, loading: false });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro ao buscar entradas';
+      set({ error: message, loading: false });
+      throw new Error(message);
+    }
+  },
+  
+  fetchAdminUsers: async () => {
+    try {
+      set({ loading: true, error: null });
+      const adminUsers = await diaryService.getAdminUsers();
+      set({ adminUsers, loading: false });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erro ao buscar administradores';
       set({ error: message, loading: false });
       throw new Error(message);
     }

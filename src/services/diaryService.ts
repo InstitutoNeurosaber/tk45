@@ -8,10 +8,12 @@ import {
   where,
   orderBy,
   getDocs,
-  Timestamp
+  Timestamp,
+  or
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import type { DiaryEntry } from '../types/diary';
+import type { User } from '../types/user';
 
 export const diaryService = {
   async createEntry(data: Omit<DiaryEntry, 'id' | 'createdAt' | 'updatedAt'>): Promise<DiaryEntry> {
@@ -63,14 +65,20 @@ export const diaryService = {
     try {
       const entriesRef = collection(db, 'diary_entries');
       
-      // Primeiro tenta buscar com o índice composto
+      // Busca entradas do usuário e entradas compartilhadas com ele
       try {
         const q = query(
           entriesRef,
-          where('userId', '==', userId),
+          or(
+            where('userId', '==', userId),
+            where('sharedWith', 'array-contains', userId)
+          ),
           orderBy('updatedAt', 'desc')
         );
+        
         const snapshot = await getDocs(q);
+        console.log(`Encontradas ${snapshot.size} entradas (próprias + compartilhadas)`);
+        
         return snapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data(),
@@ -78,22 +86,46 @@ export const diaryService = {
           updatedAt: doc.data().updatedAt.toDate()
         })) as DiaryEntry[];
       } catch (indexError) {
-        // Se falhar por falta de índice, faz uma busca simples
-        console.warn('Índice não encontrado, fazendo busca simples:', indexError);
-        const q = query(
+        // Se falhar por falta de índice, faz duas buscas separadas
+        console.warn('Índice composto não encontrado, fazendo busca alternativa:', indexError);
+        
+        // Busca entradas do usuário
+        const userEntriesQuery = query(
           entriesRef,
           where('userId', '==', userId)
         );
-        const snapshot = await getDocs(q);
-        const entries = snapshot.docs.map(doc => ({
+        
+        // Busca entradas compartilhadas com o usuário
+        const sharedEntriesQuery = query(
+          entriesRef,
+          where('sharedWith', 'array-contains', userId)
+        );
+        
+        const [userSnapshot, sharedSnapshot] = await Promise.all([
+          getDocs(userEntriesQuery),
+          getDocs(sharedEntriesQuery)
+        ]);
+        
+        console.log(`Encontradas ${userSnapshot.size} entradas próprias e ${sharedSnapshot.size} compartilhadas`);
+        
+        // Combina os resultados
+        const userEntries = userSnapshot.docs.map(doc => ({
           id: doc.id,
           ...doc.data(),
           createdAt: doc.data().createdAt.toDate(),
           updatedAt: doc.data().updatedAt.toDate()
         })) as DiaryEntry[];
-
-        // Ordena manualmente
-        return entries.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+        
+        const sharedEntries = sharedSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt.toDate(),
+          updatedAt: doc.data().updatedAt.toDate()
+        })) as DiaryEntry[];
+        
+        // Combina e ordena manualmente
+        const allEntries = [...userEntries, ...sharedEntries];
+        return allEntries.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
       }
     } catch (error) {
       console.error('Erro ao buscar entradas:', error);
@@ -111,6 +143,31 @@ export const diaryService = {
     } catch (error) {
       console.error('Erro ao compartilhar entrada:', error);
       throw new Error(error instanceof Error ? error.message : 'Erro ao compartilhar entrada do diário');
+    }
+  },
+
+  async getAdminUsers(): Promise<User[]> {
+    try {
+      const usersRef = collection(db, 'users');
+      const q = query(
+        usersRef,
+        where('role', '==', 'admin'),
+        where('active', '==', true)
+      );
+      
+      const snapshot = await getDocs(q);
+      console.log(`Encontrados ${snapshot.size} usuários administradores`);
+      
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        createdAt: doc.data().createdAt.toDate(),
+        updatedAt: doc.data().updatedAt.toDate(),
+        lastLogin: doc.data().lastLogin?.toDate() || null
+      })) as User[];
+    } catch (error) {
+      console.error('Erro ao buscar administradores:', error);
+      throw new Error(error instanceof Error ? error.message : 'Erro ao buscar usuários administradores');
     }
   }
 };
