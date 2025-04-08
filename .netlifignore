@@ -1,0 +1,14 @@
+# Ignora todos os arquivos TypeScript no diretório de funções
+netlify/functions/**/*.ts
+netlify/functions/*.ts
+
+# Ignorar especificamente os arquivos problemáticos
+netlify/functions/clickup-proxy.ts
+netlify/functions/delete-webhook.ts
+netlify/functions/google-token.ts
+netlify/functions/send-email.ts
+netlify/functions/test.ts
+netlify/functions/token.ts
+netlify/functions/triggerSiteUpdate.ts
+netlify/functions/vercel-deploy-hook.ts
+netlify/functions/webhook.ts 
