@@ -1,0 +1,175 @@
+import { initializeApp } from 'firebase/app';
+import { getAuth, setPersistence, browserLocalPersistence } from 'firebase/auth';
+import { enableIndexedDbPersistence, initializeFirestore, disableNetwork, enableNetwork, waitForPendingWrites, setLogLevel, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
+import { getFunctions } from 'firebase/functions';
+import localforage from 'localforage';
+// Configurar nível de log do Firestore
+setLogLevel('error');
+// Configurar cache local
+localforage.config({
+    name: 'neuro-painel',
+    storeName: 'cache'
+});
+const firebaseConfig = {
+    apiKey: "AIzaSyBNGvGob1xRGf86twcBxEaGRMxvZH8sOT0",
+    authDomain: "neuro-painel.firebaseapp.com",
+    projectId: "neuro-painel",
+    storageBucket: "neuro-painel.appspot.com",
+    messagingSenderId: "790923095549",
+    appId: "1:790923095549:web:6aff1a9ff9c9ff2f31bd94"
+};
+// Inicializar Firebase
+const app = initializeApp(firebaseConfig);
+// Inicializar Firestore com configurações otimizadas
+const db = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+        tabManager: persistentMultipleTabManager()
+    }),
+    experimentalForceLongPolling: true, // Forçar long polling
+    experimentalAutoDetectLongPolling: false, // Desabilitar detecção automática
+    ignoreUndefinedProperties: true
+});
+// Inicializar outros serviços
+const auth = getAuth(app);
+const storage = getStorage(app);
+const functions = getFunctions(app);
+// Configurar persistência de autenticação com retry
+const setupAuth = async (retryCount = 0) => {
+    try {
+        await setPersistence(auth, browserLocalPersistence);
+    }
+    catch (error) {
+        if (retryCount < 3) {
+            console.warn(`Tentativa ${retryCount + 1} de configurar persistência de auth falhou, tentando novamente em 2s...`);
+            setTimeout(() => setupAuth(retryCount + 1), 2000);
+        }
+        else {
+            console.error('Erro ao configurar persistência de auth após várias tentativas:', error);
+        }
+    }
+};
+setupAuth();
+/* Removendo conexão com emuladores locais
+if (import.meta.env.DEV) {
+  try {
+    connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+    connectFirestoreEmulator(db, '127.0.0.1', 8080);
+    connectStorageEmulator(storage, '127.0.0.1', 9199);
+    connectFunctionsEmulator(functions, '127.0.0.1', 5001);
+    console.log('Emuladores conectados com sucesso');
+  } catch (error) {
+    console.error('Erro ao conectar emuladores:', error);
+  }
+}
+*/
+// Configurar região das Cloud Functions (opcional)
+functions.region = 'southamerica-east1'; // Região mais próxima do Brasil
+// Estado da conexão
+let isOnline = navigator.onLine;
+let persistenceEnabled = false;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 5;
+const RECONNECT_DELAY = 5000;
+const OFFLINE_CACHE_KEY = 'firestore_offline_cache';
+// Habilitar persistência offline com retry
+const enablePersistence = async (retryCount = 0) => {
+    if (persistenceEnabled)
+        return;
+    try {
+        await enableIndexedDbPersistence(db);
+        persistenceEnabled = true;
+        console.log('Persistência offline habilitada com sucesso');
+    }
+    catch (err) {
+        if (err.code === 'failed-precondition') {
+            console.warn('Múltiplas abas abertas, persistência disponível em apenas uma');
+            persistenceEnabled = true; // Consideramos ok neste caso
+        }
+        else if (err.code === 'unimplemented') {
+            console.warn('Navegador não suporta persistência offline');
+            persistenceEnabled = true; // Nada podemos fazer
+        }
+        else if (retryCount < 3) {
+            console.warn(`Tentativa ${retryCount + 1} de habilitar persistência falhou, tentando novamente em 2s...`);
+            setTimeout(() => enablePersistence(retryCount + 1), 2000);
+        }
+        else {
+            console.error('Erro ao configurar persistência após várias tentativas:', err);
+            // Tentar usar localforage como fallback
+            try {
+                await localforage.setItem(OFFLINE_CACHE_KEY, {
+                    enabled: true,
+                    timestamp: Date.now()
+                });
+            }
+            catch (fallbackError) {
+                console.error('Erro ao configurar cache fallback:', fallbackError);
+            }
+        }
+    }
+};
+// Iniciar persistência
+enablePersistence();
+// Função para reconectar ao Firestore com retry
+export const reconnectFirestore = async (attempt = 0) => {
+    if (isOnline && attempt < MAX_RECONNECT_ATTEMPTS) {
+        try {
+            // Limpar cache antes de reconectar
+            await localforage.removeItem(OFFLINE_CACHE_KEY);
+            // Aguardar antes de tentar reconectar
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            // Tentar habilitar a rede
+            await enableNetwork(db);
+            // Aguardar escritas pendentes
+            await waitForPendingWrites(db);
+            console.log('Reconectado ao Firestore com sucesso');
+            reconnectAttempts = 0;
+            return true;
+        }
+        catch (error) {
+            console.warn(`Tentativa ${attempt + 1} de reconexão falhou:`, error);
+            // Backoff exponencial
+            const delay = Math.min(1000 * Math.pow(2, attempt), 30000); // Máximo de 30 segundos
+            if (attempt < MAX_RECONNECT_ATTEMPTS - 1) {
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return reconnectFirestore(attempt + 1);
+            }
+            console.error('Máximo de tentativas de reconexão atingido');
+            return false;
+        }
+    }
+    return false;
+};
+// Função para desconectar do Firestore
+export const disconnectFirestore = async () => {
+    if (!isOnline)
+        return true;
+    try {
+        await waitForPendingWrites(db);
+        await disableNetwork(db);
+        isOnline = false;
+        console.log('Desconectado do Firestore');
+        return true;
+    }
+    catch (error) {
+        console.error('Erro ao desconectar do Firestore:', error);
+        return false;
+    }
+};
+// Monitorar estado da conexão
+window.addEventListener('online', async () => {
+    isOnline = true;
+    console.log('Conexão de rede restaurada');
+    await reconnectFirestore();
+});
+window.addEventListener('offline', async () => {
+    isOnline = false;
+    console.log('Conexão de rede perdida');
+    await disconnectFirestore();
+});
+// Verificar conexão inicial
+if (!navigator.onLine) {
+    disconnectFirestore();
+}
+export { app, db, auth, storage, functions };

@@ -1,7 +1,9 @@
-import { Handler } from '@netlify/functions';
-import axios from 'axios';
+const axios = require('axios');
 
-export const handler: Handler = async (event) => {
+/**
+ * Handler para o webhook proxy
+ */
+exports.handler = async (event) => {
   // Configurar headers CORS padrão para todas as respostas
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -101,7 +103,7 @@ export const handler: Handler = async (event) => {
 /**
  * Função para validar URLs
  */
-async function handleUrlValidation(requestBody: any, corsHeaders: Record<string, string>) {
+async function handleUrlValidation(requestBody, corsHeaders) {
   const { url } = requestBody;
 
   if (!url) {
@@ -176,7 +178,7 @@ async function handleUrlValidation(requestBody: any, corsHeaders: Record<string,
 /**
  * Função para encaminhar webhooks
  */
-async function handleWebhookProxy(requestBody: any, corsHeaders: Record<string, string>) {
+async function handleWebhookProxy(requestBody, corsHeaders) {
   // Obter dados da requisição
   const { targetUrl, event, data, ...restPayload } = requestBody;
 
@@ -198,62 +200,62 @@ async function handleWebhookProxy(requestBody: any, corsHeaders: Record<string, 
 
   // Verificar formato da URL para evitar erros comuns
   let webhookUrl = targetUrl;
-
-  // Corrigir URLs comuns com erros de digitação
-  if (webhookUrl.includes('sistemaneurousaber')) {
-    webhookUrl = webhookUrl.replace('sistemaneurousaber', 'sistemaneurosaber');
-    console.log('[Webhook Proxy] URL corrigida (neurousaber -> neurosaber):', webhookUrl);
+  if (!webhookUrl.startsWith('http://') && !webhookUrl.startsWith('https://')) {
+    webhookUrl = `https://${webhookUrl}`;
+    console.log(`[Webhook Proxy] URL ajustada para: ${webhookUrl}`);
   }
 
-  // Corrigir caminhos plurais incorretos
-  if (webhookUrl.includes('/webhooks/')) {
-    webhookUrl = webhookUrl.replace('/webhooks/', '/webhook/');
-    console.log('[Webhook Proxy] Caminho corrigido (webhooks -> webhook):', webhookUrl);
-  }
-
-  // Garantir protocolo https
-  if (!webhookUrl.startsWith('http')) {
-    webhookUrl = 'https://' + webhookUrl;
-    console.log('[Webhook Proxy] Protocolo adicionado:', webhookUrl);
-  }
-
-  console.log(`[Webhook Proxy] Enviando evento "${event}" para ${webhookUrl}`);
-
-  // Criar payload final
+  // Criar payload para envio
   const payload = {
     event,
     data,
-    timestamp: new Date().toISOString(),
+    timestamp: Date.now(),
     ...restPayload
   };
 
-  // Definir cabeçalhos para a solicitação
-  const headers = {
-    'Content-Type': 'application/json',
-    'X-From-Webhook': 'true',
-    'X-From-Testing': 'false',
-    'User-Agent': 'Webhook-Proxy-Netlify-Function'
-  };
-
+  // Tentar enviar o webhook
   try {
-    // Configuração do timeout para evitar esperas muito longas
-    const timeoutMs = 15000; // 15 segundos
-
-    // Tentar enviar o webhook com timeout
+    console.log(`[Webhook Proxy] Enviando webhook para: ${webhookUrl}`);
+    console.log('[Webhook Proxy] Payload:', JSON.stringify(payload));
+    
+    const isTestMode = requestBody.isTestMode === true;
+    
+    // Verificar se é modo de teste (não envia realmente)
+    if (isTestMode) {
+      console.log('[Webhook Proxy] Modo de teste ativado, não enviando requisição real');
+      return {
+        statusCode: 200,
+        headers: {
+          ...corsHeaders,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          success: true,
+          testMode: true,
+          message: 'Webhook seria enviado com sucesso (modo de teste)',
+          requestDetails: {
+            url: webhookUrl,
+            method: 'POST',
+            payload
+          }
+        })
+      };
+    }
+    
+    // Enviar a requisição real
     const response = await axios.post(webhookUrl, payload, {
-      headers,
-      timeout: timeoutMs,
-      validateStatus: () => true // Não lançar erro para nenhum status HTTP
+      headers: {
+        'Content-Type': 'application/json',
+        'X-From-Webhook': 'true',
+        ...(requestBody.headers || {})
+      },
+      timeout: 10000,
+      validateStatus: () => true
     });
-
-    const statusCode = response.status;
-    const responseData = response.data;
-
-    console.log(`[Webhook Proxy] Resposta recebida (${statusCode}):`,
-      typeof responseData === 'object' ? JSON.stringify(responseData, null, 2) : responseData
-    );
-
-    // Retornar a resposta do serviço de destino
+    
+    const responseStatus = response.status;
+    console.log(`[Webhook Proxy] Resposta do webhook: ${responseStatus}`);
+    
     return {
       statusCode: 200,
       headers: {
@@ -261,36 +263,40 @@ async function handleWebhookProxy(requestBody: any, corsHeaders: Record<string, 
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        success: statusCode >= 200 && statusCode < 300,
-        targetUrl: webhookUrl,
-        statusCode,
-        response: responseData,
-        originalUrl: targetUrl !== webhookUrl ? targetUrl : undefined
+        success: responseStatus >= 200 && responseStatus < 300,
+        targetStatus: responseStatus,
+        message: responseStatus >= 200 && responseStatus < 300
+          ? 'Webhook enviado com sucesso'
+          : `Falha ao enviar webhook, status: ${responseStatus}`,
+        targetResponse: typeof response.data === 'object' 
+          ? response.data 
+          : { rawResponse: String(response.data).substring(0, 500) }
       })
     };
   } catch (error) {
-    console.error('[Webhook Proxy] Erro ao encaminhar webhook:', error);
-
-    let errorMessage = 'Erro desconhecido';
-    let errorDetails: string | Record<string, any> | undefined = undefined;
-
+    console.error('[Webhook Proxy] Erro ao enviar webhook:', error);
+    
+    let errorMessage = 'Erro ao enviar webhook';
+    let errorDetails = {};
+    
     if (axios.isAxiosError(error)) {
-      errorMessage = error.message;
-
       if (error.code === 'ECONNREFUSED') {
-        errorMessage = 'Conexão recusada pelo servidor';
-        errorDetails = 'O servidor de destino não está acessível';
+        errorMessage = 'Conexão recusada pelo servidor de destino';
       } else if (error.code === 'ECONNABORTED') {
-        errorMessage = 'Tempo limite excedido';
-        errorDetails = 'O servidor de destino demorou muito para responder';
-      } else if (error.response) {
-        errorMessage = `Erro HTTP ${error.response.status}`;
-        errorDetails = error.response.data;
+        errorMessage = 'Tempo limite excedido ao tentar enviar webhook';
+      } else if (error.code === 'ENOTFOUND') {
+        errorMessage = 'Servidor de destino não encontrado';
       }
+      
+      errorDetails = {
+        code: error.code,
+        message: error.message,
+        response: error.response?.data
+      };
     }
-
+    
     return {
-      statusCode: 502,
+      statusCode: 200, // Retornar 200 mesmo com erro para evitar cascata de falhas
       headers: {
         ...corsHeaders,
         'Content-Type': 'application/json'
@@ -299,9 +305,8 @@ async function handleWebhookProxy(requestBody: any, corsHeaders: Record<string, 
         success: false,
         error: errorMessage,
         details: errorDetails,
-        targetUrl: webhookUrl,
-        originalUrl: targetUrl !== webhookUrl ? targetUrl : undefined
+        message: `Falha ao enviar webhook: ${errorMessage}`
       })
     };
   }
-}
+} 

@@ -1,13 +1,32 @@
-import { Handler } from '@netlify/functions';
-import { ticketService } from '../../src/services/ticketService';
-
-const validateApiKey = async (apiKey: string | undefined): Promise<boolean> => {
+// Versão simplificada do serviço de tickets para o Netlify
+const validateApiKey = async (apiKey) => {
   if (!apiKey) return false;
-  // Implementar validação da API key aqui
+  // Implementar validação da API key aqui (simplificada)
   return true;
 };
 
-export const handler: Handler = async (event, context) => {
+// Funções básicas de manipulação de tickets
+const ticketService = {
+  createTicket: async (data) => {
+    console.log('Criando ticket:', data);
+    // Implementação será feita diretamente no frontend
+    return { id: 'mock-id', ...data };
+  },
+  
+  updateTicketStatus: async (ticketId, status) => {
+    console.log(`Atualizando status do ticket ${ticketId} para ${status}`);
+    // Implementação será feita diretamente no frontend
+    return true;
+  },
+  
+  deleteTicket: async (ticketId) => {
+    console.log(`Excluindo ticket ${ticketId}`);
+    // Implementação será feita diretamente no frontend
+    return true;
+  }
+};
+
+exports.handler = async (event, context) => {
   // Verificar API key
   const apiKey = event.headers['x-api-key'];
   if (!await validateApiKey(apiKey)) {
@@ -70,4 +89,4 @@ export const handler: Handler = async (event, context) => {
       })
     };
   }
-};
+}; 

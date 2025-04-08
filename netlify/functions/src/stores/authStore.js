@@ -1,0 +1,113 @@
+import { create } from 'zustand';
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut as firebaseSignOut, onAuthStateChanged } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
+import { auth, db, reconnectFirestore } from '../lib/firebase';
+import { authService } from '../services/authService';
+export const useAuthStore = create((set, get) => ({
+    user: null,
+    userData: null,
+    loading: true,
+    error: null,
+    fetchUserData: async (userId) => {
+        try {
+            // Tentar reconectar antes de buscar dados
+            await reconnectFirestore();
+            const userData = await authService.fetchUserData(userId);
+            if (userData) {
+                set({ userData });
+            }
+            return userData;
+        }
+        catch (error) {
+            console.error('Erro ao buscar dados do usuário:', error);
+            // Não propagar erro para não bloquear o fluxo
+            return null;
+        }
+    },
+    signIn: async (email, password) => {
+        try {
+            set({ loading: true, error: null });
+            const result = await signInWithEmailAndPassword(auth, email, password);
+            await get().fetchUserData(result.user.uid);
+        }
+        catch (error) {
+            set({ error: error.message });
+        }
+        finally {
+            set({ loading: false });
+        }
+    },
+    signInWithGoogle: async () => {
+        try {
+            set({ loading: true, error: null });
+            const { user } = await authService.signInWithGoogle();
+            await get().fetchUserData(user.uid);
+        }
+        catch (error) {
+            set({ error: error.message });
+        }
+        finally {
+            set({ loading: false });
+        }
+    },
+    signUp: async (email, password, name) => {
+        try {
+            set({ loading: true, error: null });
+            const result = await createUserWithEmailAndPassword(auth, email, password);
+            const userData = {
+                id: result.user.uid,
+                email: result.user.email,
+                name,
+                role: 'user',
+                active: true,
+                createdAt: new Date(),
+                updatedAt: new Date(),
+                lastLogin: new Date()
+            };
+            await setDoc(doc(db, 'users', result.user.uid), userData);
+            set({ userData });
+        }
+        catch (error) {
+            set({ error: error.message });
+        }
+        finally {
+            set({ loading: false });
+        }
+    },
+    signOut: async () => {
+        try {
+            set({ loading: true, error: null });
+            await firebaseSignOut(auth);
+            set({ userData: null });
+        }
+        catch (error) {
+            set({ error: error.message });
+        }
+        finally {
+            set({ loading: false });
+        }
+    },
+    sendPasswordReset: async (email) => {
+        try {
+            set({ loading: true, error: null });
+            await authService.sendPasswordResetEmail(email);
+        }
+        catch (error) {
+            set({ error: error.message });
+            throw error;
+        }
+        finally {
+            set({ loading: false });
+        }
+    }
+}));
+// Observar mudanças no estado de autenticação
+onAuthStateChanged(auth, async (user) => {
+    if (user) {
+        useAuthStore.setState({ user, loading: false });
+        await useAuthStore.getState().fetchUserData(user.uid);
+    }
+    else {
+        useAuthStore.setState({ user: null, userData: null, loading: false });
+    }
+});

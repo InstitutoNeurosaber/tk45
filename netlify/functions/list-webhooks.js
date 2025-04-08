@@ -1,7 +1,6 @@
-import { Handler } from '@netlify/functions';
-import { initializeApp, getApps, cert } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
-import { getAuth } from 'firebase-admin/auth';
+const { initializeApp, getApps, cert } = require('firebase-admin/app');
+const { getFirestore } = require('firebase-admin/firestore');
+const { getAuth } = require('firebase-admin/auth');
 
 // Inicialização do Firebase
 if (!getApps().length) {
@@ -23,21 +22,7 @@ if (!getApps().length) {
 const db = getFirestore();
 const auth = getAuth();
 
-interface Webhook {
-  id: string;
-  active: boolean;
-  createdAt: string;
-  updatedAt: string;
-  events: string[];
-  headers: {
-    name: string;
-    testUrl: string;
-    url: string;
-    userId: string;
-  };
-}
-
-export const handler: Handler = async (event) => {
+exports.handler = async (event) => {
   console.log('Iniciando listagem de webhooks');
   console.log('Headers da requisição:', JSON.stringify(event.headers));
   
@@ -71,7 +56,7 @@ export const handler: Handler = async (event) => {
     console.log('Buscando webhooks no Firestore');
     
     // Buscar em ambas as coleções: webhooks_config (frontend) e webhooks (API)
-    const webhooks: Webhook[] = [];
+    const webhooks = [];
     
     // TEMPORÁRIO: Listar todas as coleções
     try {
@@ -205,27 +190,26 @@ export const handler: Handler = async (event) => {
           });
         });
       } catch (error) {
-        console.error('Último recurso falhou:', error);
+        console.error('Erro ao buscar todos os webhooks para admin:', error);
       }
-    }
-
-    if (webhooks.length > 0) {
-      console.log('Primeiro webhook:', JSON.stringify(webhooks[0], null, 2));
-    } else {
-      console.log('Nenhum webhook encontrado após todas as tentativas!');
     }
 
     return {
       statusCode: 200,
-      body: JSON.stringify(webhooks)
+      body: JSON.stringify({
+        success: true, 
+        webhooks
+      })
     };
   } catch (error) {
-    console.error('Erro ao buscar webhooks:', error);
+    console.error('Erro ao processar requisição de webhooks:', error);
+    
     return {
       statusCode: 500,
       body: JSON.stringify({ 
-        message: 'Erro interno do servidor',
-        error: error instanceof Error ? error.message : 'Erro desconhecido'
+        success: false,
+        error: 'Erro interno do servidor',
+        message: error instanceof Error ? error.message : 'Erro desconhecido'
       })
     };
   }
