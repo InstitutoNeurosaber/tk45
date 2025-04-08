@@ -5,7 +5,7 @@
 
 [functions]
   node_bundler = "esbuild"
-  directory = "netlify/functions"
+  external_node_modules = ["firebase", "firebase-admin"]
   
 [[redirects]]
   from = "/*"
@@ -27,6 +27,30 @@
 [[redirects]]
   from = "/api/webhook-proxy"
   to = "/.netlify/functions/webhook-proxy"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/clickup/proxy"
+  to = "/.netlify/functions/clickup-proxy"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/clickup/config"
+  to = "/.netlify/functions/get-clickup-config"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/webhook/delete/*"
+  to = "/.netlify/functions/delete-webhook?id=:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/clickup/status"
+  to = "/.netlify/functions/update-clickup-status"
   status = 200
   force = true
 
