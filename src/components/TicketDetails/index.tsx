@@ -10,6 +10,7 @@ import { TicketPriority } from './TicketPriority';
 import { DeleteConfirmationModal } from '../DeleteConfirmationModal';
 import { statusLabels, priorityLabels, statusColors, priorityColors } from '../../types/ticket';
 import type { Ticket } from '../../types/ticket';
+import { Comments } from '../Comments';
 
 interface TicketDetailsProps {
   ticket: Ticket;
@@ -109,8 +110,8 @@ export function TicketDetails({ ticket, onClose, onStatusChange, onUpdate }: Tic
 
           {/* Conteúdo Principal */}
           <div className="flex h-[calc(90vh-200px)]">
-            {/* Coluna Principal - 70% */}
-            <div className="w-[70%] p-6 overflow-y-auto border-r border-gray-200">
+            {/* Coluna Principal - 60% */}
+            <div className="w-[60%] p-6 overflow-y-auto border-r border-gray-200">
               {/* Descrição */}
               <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
                 <div className="flex items-center justify-between mb-4">
@@ -119,6 +120,8 @@ export function TicketDetails({ ticket, onClose, onStatusChange, onUpdate }: Tic
                     <button
                       onClick={() => setIsEditing(true)}
                       className="text-sm text-blue-600 hover:text-blue-800"
+                      aria-label="Editar descrição"
+                      title="Editar descrição"
                     >
                       Editar
                     </button>
@@ -132,6 +135,7 @@ export function TicketDetails({ ticket, onClose, onStatusChange, onUpdate }: Tic
                       onChange={(e) => setDescription(e.target.value)}
                       className="w-full h-40 p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 resize-none"
                       placeholder="Descreva o ticket..."
+                      aria-label="Campo de descrição do ticket"
                     />
                     <div className="flex justify-end space-x-2">
                       <button
@@ -140,6 +144,7 @@ export function TicketDetails({ ticket, onClose, onStatusChange, onUpdate }: Tic
                           setDescription(ticket.description);
                         }}
                         className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+                        aria-label="Cancelar edição"
                       >
                         Cancelar
                       </button>
@@ -147,6 +152,7 @@ export function TicketDetails({ ticket, onClose, onStatusChange, onUpdate }: Tic
                         onClick={handleSaveDescription}
                         disabled={loading}
                         className="px-4 py-2 text-sm text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50"
+                        aria-label="Salvar alterações"
                       >
                         Salvar
                       </button>
@@ -156,10 +162,19 @@ export function TicketDetails({ ticket, onClose, onStatusChange, onUpdate }: Tic
                   <p className="text-gray-700 whitespace-pre-wrap">{description}</p>
                 )}
               </div>
+              
+              {/* Comentários */}
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                  <MessageSquare className="h-5 w-5 text-gray-500 mr-2" />
+                  Comentários
+                </h3>
+                <Comments ticket={ticket} />
+              </div>
             </div>
 
-            {/* Barra Lateral - 30% */}
-            <div className="w-[30%] p-6 bg-gray-50 overflow-y-auto">
+            {/* Barra Lateral - 40% */}
+            <div className="w-[40%] p-6 bg-gray-50 overflow-y-auto">
               <div className="space-y-6">
                 {/* Informações do Ticket */}
                 <div className="bg-white rounded-lg border border-gray-200 p-6">

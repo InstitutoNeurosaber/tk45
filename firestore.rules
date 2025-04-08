@@ -1,15 +1,63 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Função auxiliar para verificar se o usuário está autenticado
+    // Função para verificar se o usuário está autenticado
     function isAuthenticated() {
       return request.auth != null;
     }
+    
+    // Função para verificar se é o administrador (Thiago)
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.email == "thiago@neurosaber.com.br";
+    }
 
+    // Função para verificar se o usuário é o autor do documento
+    function isAuthor(resource) {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    // Regras para usuários
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && request.auth.uid == userId;
+      allow delete: if request.auth.uid == userId || isAdmin();
+    }
+    
     // Regras para tickets
     match /tickets/{ticketId} {
-      // Qualquer usuário autenticado pode ler e escrever tickets
-      allow read, write: if isAuthenticated();
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated();
+      allow delete: if isAuthenticated() && (isAuthor(resource) || isAdmin());
+      
+      // Regras para comentários dentro de tickets
+      match /comments/{commentId} {
+        allow read: if isAuthenticated();
+        allow create: if isAuthenticated();
+        allow update: if isAuthenticated() && (request.auth.uid == resource.data.userId || isAdmin());
+        allow delete: if isAuthenticated() && (request.auth.uid == resource.data.userId || isAdmin());
+      }
+    }
+    
+    // Regras para notificações
+    match /notifications/{notificationId} {
+      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      allow create: if isAuthenticated();
+      allow update: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+    
+    // Regras para webhooks
+    match /webhooks/{webhookId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+    
+    // Regra padrão para outras coleções
+    match /{collection}/{document} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+      allow delete: if isAuthenticated() && (request.auth.uid == resource.data.userId || isAdmin());
     }
   }
 } 

@@ -14,7 +14,8 @@ import {
   Trash2,
   Plus,
   RefreshCw,
-  XCircle
+  XCircle,
+  MessageSquare
 } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -24,6 +25,7 @@ import { DeleteConfirmationModal } from './DeleteConfirmationModal';
 import { statusLabels, priorityLabels, categoryLabels } from '../types/ticket';
 import type { Ticket, TicketStatus, TicketPriority } from '../types/ticket';
 import { clickupService } from '../services/clickupService';
+import { Comments } from './Comments';
 
 interface TicketDetailsModalProps {
   ticket: Ticket;
@@ -483,8 +485,19 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                     </div>
                   </div>
                 ) : (
-                  <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{description}</p>
+                  <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{description || "Sem descrição disponível."}</p>
                 )}
+              </div>
+              
+              {/* Comentários */}
+              <div className="bg-white rounded-lg border border-gray-200 p-6">
+                <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                  <MessageSquare className="h-5 w-5 text-gray-500 mr-2" />
+                  Comentários
+                </h3>
+                <div className="max-h-[400px]">
+                  <Comments ticket={ticket} />
+                </div>
               </div>
             </div>
 

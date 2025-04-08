@@ -23,6 +23,7 @@ import { UserManagement } from './components/UserManagement';
 import { DiaryPage } from './pages/Diary';
 import { ProfilePage } from './components/ProfilePage';
 import type { Ticket, TicketStatus, TicketPriority, TicketCategory } from './types/ticket';
+import { CommentsPage } from './pages/CommentsPage';
 
 function MainContent() {
   const navigate = useNavigate();
@@ -324,8 +325,8 @@ function App() {
       <Router>
         <Routes>
           <Route path="/diary" element={<DiaryPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route path="/" element={<MainContent />} />
+          <Route path="/comments/:ticketId" element={<CommentsPage />} />
+          <Route path="/*" element={<MainContent />} />
         </Routes>
       </Router>
     </>

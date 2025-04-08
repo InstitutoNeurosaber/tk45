@@ -141,6 +141,13 @@ export function KanbanCard({ ticket, onClick, isDragging = false }: KanbanCardPr
             </div>
 
             <div className="flex items-center space-x-2">
+              {ticket.commentCount && ticket.commentCount > 0 && (
+                <div className="flex items-center space-x-1 text-blue-600">
+                  <MessageSquare className="w-4 h-4" />
+                  <span>{ticket.commentCount}</span>
+                </div>
+              )}
+              
               {ticket.attachments && ticket.attachments.length > 0 && (
                 <div className="flex items-center space-x-1 text-gray-600">
                   <Paperclip className="w-4 h-4" />

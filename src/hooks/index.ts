@@ -7,4 +7,5 @@ export * from './useApi';
 export * from './useNotifications';
 export * from './useTickets';
 export * from './useTicketStatus';
-export * from './useWebhooks'; 
+export * from './useWebhooks';
+export * from './useComments'; 
