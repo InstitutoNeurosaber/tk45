@@ -161,4 +161,46 @@ export class ClickUpAPI {
     console.log(`Buscando todas as tarefas da lista ${listId}`);
     return this.request<{ tasks: ClickUpTask[] }>(`/list/${listId}/task`);
   }
+
+  /**
+   * Adiciona um comentário a uma tarefa no ClickUp
+   * @param taskId ID da tarefa no ClickUp
+   * @param comment Texto do comentário
+   * @param notifyAll Se true, notifica todos os membros da tarefa
+   * @returns Objeto com o comentário criado
+   */
+  async createTaskComment(taskId: string, comment: string, notifyAll: boolean = false): Promise<any> {
+    if (!taskId) {
+      throw new Error('ID da tarefa é obrigatório');
+    }
+    
+    if (!comment || !comment.trim()) {
+      throw new Error('Comentário vazio');
+    }
+    
+    console.log(`Adicionando comentário à tarefa ${taskId}`);
+    
+    return this.request(`/task/${taskId}/comment`, {
+      method: 'POST',
+      body: JSON.stringify({
+        comment_text: comment,
+        notify_all: notifyAll
+      })
+    });
+  }
+  
+  /**
+   * Obtém todos os comentários de uma tarefa no ClickUp
+   * @param taskId ID da tarefa no ClickUp
+   * @returns Lista de comentários da tarefa
+   */
+  async getTaskComments(taskId: string): Promise<any> {
+    if (!taskId) {
+      throw new Error('ID da tarefa é obrigatório');
+    }
+    
+    console.log(`Buscando comentários da tarefa ${taskId}`);
+    
+    return this.request(`/task/${taskId}/comment`);
+  }
 }

@@ -20,6 +20,7 @@ import {
 import { db, storage } from '../lib/firebase';
 import { useAuthStore } from '../stores/authStore';
 import { v4 as uuidv4 } from 'uuid';
+import { clickupService } from '../services/clickupService';
 
 // Interfaces para usar no hook
 interface Comment {
@@ -144,7 +145,24 @@ export function useComments(ticketId: string) {
         const ticketDoc = await getDoc(ticketRef);
         
         if (ticketDoc.exists()) {
-          const currentCount = ticketDoc.data().commentCount || 0;
+          const ticketData = ticketDoc.data();
+          const currentCount = ticketData.commentCount || 0;
+          
+          // Sincronizar o comentário com o ClickUp, se houver taskId
+          if (ticketData.taskId) {
+            try {
+              await clickupService.addCommentToTask(
+                ticketData.taskId,
+                content.trim(),
+                user.displayName || 'Usuário'
+              );
+              console.log(`Comentário sincronizado com ClickUp na tarefa ${ticketData.taskId}`);
+            } catch (clickupError) {
+              console.warn('Não foi possível sincronizar o comentário com o ClickUp:', clickupError);
+              // Não tratar como erro crítico para não bloquear a adição do comentário no sistema
+            }
+          }
+          
           await updateDoc(ticketRef, {
             commentCount: currentCount + 1,
             updatedAt: Timestamp.now()
@@ -225,7 +243,24 @@ export function useComments(ticketId: string) {
         const ticketDoc = await getDoc(ticketRef);
         
         if (ticketDoc.exists()) {
-          const currentCount = ticketDoc.data().commentCount || 0;
+          const ticketData = ticketDoc.data();
+          const currentCount = ticketData.commentCount || 0;
+          
+          // Sincronizar o comentário com o ClickUp, se houver taskId
+          if (ticketData.taskId) {
+            try {
+              const commentText = `**${user.displayName || 'Usuário'} enviou uma imagem:** ${file.name}\n${downloadUrl}`;
+              await clickupService.addCommentToTask(
+                ticketData.taskId,
+                commentText
+              );
+              console.log(`Comentário com imagem sincronizado com ClickUp na tarefa ${ticketData.taskId}`);
+            } catch (clickupError) {
+              console.warn('Não foi possível sincronizar o comentário com imagem para o ClickUp:', clickupError);
+              // Não tratar como erro crítico para não bloquear a adição do comentário no sistema
+            }
+          }
+          
           await updateDoc(ticketRef, {
             commentCount: currentCount + 1,
             updatedAt: Timestamp.now()
@@ -299,7 +334,28 @@ export function useComments(ticketId: string) {
         const ticketDoc = await getDoc(ticketRef);
         
         if (ticketDoc.exists()) {
-          const currentCount = ticketDoc.data().commentCount || 0;
+          const ticketData = ticketDoc.data();
+          const currentCount = ticketData.commentCount || 0;
+          
+          // Nota: Atualmente o ClickUp não permite identificar facilmente qual comentário 
+          // deve ser excluído, pois não temos uma correlação direta entre os IDs.
+          // No futuro, seria possível adicionar o ID do comentário no sistema como 
+          // parte do texto do comentário no ClickUp para permitir essa sincronização.
+          
+          // Envia um comentário informando sobre a exclusão, se houver taskId
+          if (ticketData.taskId) {
+            try {
+              await clickupService.addCommentToTask(
+                ticketData.taskId,
+                `**Sistema:** Um comentário de ${comment.userName} foi excluído por ${user.displayName || 'Usuário'}.`
+              );
+              console.log('Notificação de exclusão de comentário enviada para o ClickUp');
+            } catch (clickupError) {
+              console.warn('Não foi possível enviar notificação de exclusão para o ClickUp:', clickupError);
+              // Não tratar como erro crítico
+            }
+          }
+          
           await updateDoc(ticketRef, {
             commentCount: Math.max(0, currentCount - 1),
             updatedAt: Timestamp.now()

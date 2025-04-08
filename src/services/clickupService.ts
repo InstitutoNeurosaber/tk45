@@ -357,6 +357,54 @@ export class ClickUpService {
       throw error;
     }
   }
+
+  /**
+   * Adiciona um comentário a uma tarefa no ClickUp
+   * @param taskId ID da tarefa no ClickUp
+   * @param comment Texto do comentário
+   * @param authorName Nome do autor para adicionar ao comentário (opcional)
+   * @returns true se o comentário foi adicionado com sucesso
+   */
+  async addCommentToTask(taskId: string, comment: string, authorName?: string): Promise<boolean> {
+    if (this.shouldThrottleError()) {
+      console.warn('[ClickUpService] Muitas falhas consecutivas, aguardando antes de tentar novamente');
+      return false;
+    }
+    
+    if (!taskId || !isValidTicketId(taskId)) {
+      console.error('[ClickUpService] ID de tarefa inválido:', taskId);
+      return false;
+    }
+    
+    if (!comment || !comment.trim()) {
+      console.error('[ClickUpService] Comentário vazio');
+      return false;
+    }
+    
+    try {
+      const api = await this.getAPI();
+      
+      // Verificar se a tarefa existe
+      if (!await api.taskExists(taskId)) {
+        console.error(`[ClickUpService] Tarefa ${taskId} não encontrada`);
+        return false;
+      }
+      
+      // Adicionar prefixo com nome do autor no comentário, se fornecido
+      const commentText = authorName 
+        ? `**${authorName}:** ${comment}`
+        : comment;
+      
+      await api.createTaskComment(taskId, commentText);
+      
+      // Reset contador de erros após sucesso
+      this._consecutiveErrors = 0;
+      return true;
+    } catch (error) {
+      console.error('[ClickUpService] Erro ao adicionar comentário:', error);
+      return false;
+    }
+  }
 }
 
 // Exportar uma instância única do serviço para uso nos componentes
