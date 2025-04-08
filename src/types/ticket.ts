@@ -72,6 +72,9 @@ export interface Ticket {
   priorityLockedBy?: string;
   priorityLockedAt?: Date;
   priorityReason?: string;
+  archived?: boolean;
+  archivedAt?: Date;
+  archivedBy?: string;
 }
 
 export const statusLabels: Record<TicketStatus, string> = {

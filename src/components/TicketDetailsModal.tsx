@@ -15,7 +15,8 @@ import {
   Plus,
   RefreshCw,
   XCircle,
-  MessageSquare
+  MessageSquare,
+  Archive
 } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -38,7 +39,7 @@ interface TicketDetailsModalProps {
 export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }: TicketDetailsModalProps) {
   const navigate = useNavigate();
   const { userData } = useAuthStore();
-  const { updateTicket, deleteTicket, syncWithClickUp } = useTicketStore();
+  const { updateTicket, deleteTicket, syncWithClickUp, archiveTicket } = useTicketStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -56,6 +57,7 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
   const [clickUpSyncLoading, setClickUpSyncLoading] = useState(false);
   const [clickUpSyncError, setClickUpSyncError] = useState<string | null>(null);
   const [clickUpSyncSuccess, setClickUpSyncSuccess] = useState(false);
+  const [archiveModalOpen, setArchiveModalOpen] = useState(false);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -304,6 +306,32 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
     }
   };
 
+  const handleArchive = async () => {
+    try {
+      setLoading(true);
+      await archiveTicket(ticket.id);
+      
+      // Atualizar o ticket local para refletir as mudanças
+      const archiveData = {
+        archived: true,
+        archivedAt: new Date(),
+        archivedBy: userData?.name || 'Administrador'
+      };
+      
+      onUpdate({
+        ...ticket,
+        ...archiveData
+      });
+      
+      onClose();
+    } catch (error) {
+      console.error('Erro ao arquivar ticket:', error);
+      setError(error instanceof Error ? error.message : 'Erro ao arquivar ticket. Por favor, tente novamente.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (error) {
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -355,6 +383,14 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                     <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-gray-100 text-gray-600">
                       <AlertTriangle className="h-3.5 w-3.5 mr-1" />
                       Não sincronizado com ClickUp
+                    </span>
+                  )}
+
+                  {/* Status de arquivamento */}
+                  {ticket.archived && (
+                    <span className="inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium bg-purple-100 text-purple-800">
+                      <Archive className="h-3.5 w-3.5 mr-1" />
+                      Arquivado
                     </span>
                   )}
 
@@ -413,6 +449,18 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                     <LinkIcon className="h-4 w-4 mr-1 inline-block" />
                     Abrir no ClickUp
                   </a>
+                )}
+                
+                {/* Botão de Arquivar - mostrar apenas se não estiver arquivado */}
+                {userData?.role === 'admin' && !ticket.archived && (
+                  <button
+                    onClick={() => setArchiveModalOpen(true)}
+                    className="inline-flex items-center px-3 py-2 text-sm font-medium text-purple-600 hover:text-purple-700 transition-colors"
+                    title="Arquivar ticket"
+                  >
+                    <Archive className="h-4 w-4 mr-2" />
+                    Arquivar
+                  </button>
                 )}
                 
                 <button
@@ -562,18 +610,31 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                   <h3 className="text-lg font-medium text-gray-900 mb-4">Status</h3>
                   <div className="relative text-gray-600 mb-2">
                     {userData?.role === 'admin' ? (
-                      <select
-                        id="ticketStatus"
-                        value={currentStatus}
-                        onChange={(e) => setCurrentStatus(e.target.value as TicketStatus)}
-                        disabled={loading}
-                        className="block appearance-none w-full bg-white border border-gray-300 hover:border-gray-400 px-4 py-2 pr-8 rounded shadow leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Status do ticket"
-                      >
-                        {Object.entries(statusLabels).map(([value, label]) => (
-                          <option key={value} value={value}>{label}</option>
-                        ))}
-                      </select>
+                      <div className="flex items-center space-x-2">
+                        <select
+                          id="ticketStatus"
+                          value={currentStatus}
+                          onChange={(e) => setCurrentStatus(e.target.value as TicketStatus)}
+                          disabled={loading}
+                          className="block appearance-none w-full bg-white border border-gray-300 hover:border-gray-400 px-4 py-2 pr-8 rounded shadow leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Status do ticket"
+                        >
+                          {Object.entries(statusLabels).map(([value, label]) => (
+                            <option key={value} value={value}>{label}</option>
+                          ))}
+                        </select>
+                        {currentStatus !== ticket.status && (
+                          <button
+                            onClick={() => handleStatusChange(currentStatus)}
+                            disabled={loading}
+                            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Salvar alteração de status"
+                          >
+                            <Save className="h-4 w-4 mr-2" />
+                            Salvar
+                          </button>
+                        )}
+                      </div>
                     ) : (
                       <div className="px-4 py-2 border border-gray-200 rounded bg-gray-50">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -636,6 +697,25 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
               Fechar
             </button>
           </div>
+
+          {/* Se estiver arquivado, mostrar informações de arquivamento */}
+          {ticket.archived && ticket.archivedAt && (
+            <div className="bg-purple-50 border-l-4 border-purple-400 p-4 mx-8 mt-4">
+              <div className="flex">
+                <div className="flex-shrink-0">
+                  <Archive className="h-5 w-5 text-purple-400" />
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-purple-800">
+                    Este ticket foi arquivado
+                  </p>
+                  <p className="mt-1 text-sm text-purple-700">
+                    Arquivado por {ticket.archivedBy} em {new Date(ticket.archivedAt).toLocaleString('pt-BR')}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -716,6 +796,45 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
               >
                 Confirmar Extensão
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Arquivamento */}
+      {archiveModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[60]">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <Archive className="h-6 w-6 text-purple-600" />
+                </div>
+                <div className="ml-3 w-0 flex-1">
+                  <h3 className="text-lg font-medium text-gray-900">
+                    Arquivar Ticket
+                  </h3>
+                  <p className="mt-2 text-sm text-gray-500">
+                    Tem certeza que deseja arquivar este ticket? Tickets arquivados são removidos da lista principal, 
+                    mas podem ser acessados quando necessário, mantendo seu histórico e último status.
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-gray-50 px-6 py-4 rounded-b-lg flex justify-end space-x-3">
+              <button
+                onClick={() => setArchiveModalOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleArchive}
+                className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+              >
+                Arquivar
               </button>
             </div>
           </div>

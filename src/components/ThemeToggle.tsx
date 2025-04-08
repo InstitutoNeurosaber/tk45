@@ -1,15 +1,9 @@
 import React from 'react';
 import { Moon, Sun } from 'lucide-react';
-import { useThemeStore } from '../stores/themeStore';
+import { useViewStore } from '../stores/viewStore';
 
 export function ThemeToggle() {
-  const { theme, toggleTheme } = useThemeStore();
-
-  React.useEffect(() => {
-    const root = window.document.documentElement;
-    root.classList.remove('light', 'dark');
-    root.classList.add(theme);
-  }, [theme]);
+  const { theme, toggleTheme } = useViewStore();
 
   return (
     <button

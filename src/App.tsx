@@ -2,7 +2,7 @@ import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 
 import React, { useState, useEffect } from 'react';
-import { Plus, Settings, Users, Book } from 'lucide-react';
+import { Plus, Settings, Users, Book, Archive, Filter } from 'lucide-react';
 import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
 import { useAuthStore } from './stores/authStore';
 import { useTickets } from './hooks/useTickets';
@@ -22,6 +22,8 @@ import { TicketFilters } from './components/TicketFilters';
 import { UserManagement } from './components/UserManagement';
 import { DiaryPage } from './pages/Diary';
 import { ProfilePage } from './components/ProfilePage';
+import { ViewProvider } from './components/ViewProvider';
+import { AppTour } from './components/AppTour';
 import type { Ticket, TicketStatus, TicketPriority, TicketCategory } from './types/ticket';
 import { CommentsPage } from './pages/CommentsPage';
 
@@ -57,6 +59,7 @@ function MainContent() {
   const [selectedStatus, setSelectedStatus] = useState<TicketStatus | 'all'>('all');
   const [selectedPriority, setSelectedPriority] = useState<TicketPriority | 'all'>('all');
   const [selectedCategory, setSelectedCategory] = useState<TicketCategory | 'all'>('all');
+  const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -131,22 +134,24 @@ function MainContent() {
     }
   };
 
-  const clearFilters = () => {
-    setSearchTerm('');
-    setSelectedStatus('all');
-    setSelectedPriority('all');
-    setSelectedCategory('all');
-  };
-
   const filteredTickets = tickets.filter(ticket => {
     const matchesSearch = ticket.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          ticket.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = selectedStatus === 'all' || ticket.status === selectedStatus;
     const matchesPriority = selectedPriority === 'all' || ticket.priority === selectedPriority;
     const matchesCategory = selectedCategory === 'all' || ticket.category === selectedCategory;
+    const matchesArchived = showArchived || !ticket.archived;
 
-    return matchesSearch && matchesStatus && matchesPriority && matchesCategory;
+    return matchesSearch && matchesStatus && matchesPriority && matchesCategory && matchesArchived;
   });
+
+  const clearFilters = () => {
+    setSearchTerm('');
+    setSelectedStatus('all');
+    setSelectedPriority('all');
+    setSelectedCategory('all');
+    setShowArchived(false);
+  };
 
   const TOAST_ID = "loading-tickets"; // ID único
 
@@ -161,7 +166,7 @@ if (loading && !toast.isActive(TOAST_ID)) {
   return (
     <div className="min-h-screen bg-background">
       <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex justify-between items-center mb-8 app-header">
           <div className="flex items-center space-x-4">
             <h1 className="text-2xl font-bold text-foreground">Sistema de Tickets TI</h1>
             <nav className="flex space-x-2">
@@ -176,7 +181,7 @@ if (loading && !toast.isActive(TOAST_ID)) {
                 Tickets
               </button>
               
-              {userData.role === 'admin' && (
+              {userData?.role === 'admin' && (
                 <>
                   <button
                     onClick={() => toggleView('dashboard')}
@@ -222,7 +227,9 @@ if (loading && !toast.isActive(TOAST_ID)) {
             </nav>
           </div>
           <div className="flex items-center space-x-4">
-            <ThemeToggle />
+            <div className="toggle-theme-button">
+              <ThemeToggle />
+            </div>
             <Notifications
               notifications={notifications}
               onMarkAsRead={markAsRead}
@@ -235,22 +242,22 @@ if (loading && !toast.isActive(TOAST_ID)) {
             {!showWebhookConfig && !showDashboard && !showUserManagement && (
               <button
                 onClick={() => setIsCreating(!isCreating)}
-                className="inline-flex items-center px-4 py-2 rounded-md text-sm font-medium text-primary-foreground bg-primary hover:bg-primary/90 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+                className="create-ticket-button inline-flex items-center px-4 py-2 rounded-md text-sm font-medium text-primary-foreground bg-primary hover:bg-primary/90 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
               >
                 <Plus className="h-5 w-5 mr-2" />
                 Novo Ticket
               </button>
             )}
-            <UserMenu userName={userData.name} onSignOut={signOut} />
+            <UserMenu userName={userData?.name || ''} onSignOut={signOut} />
           </div>
         </div>
 
         <div className="animate-in fade-in slide-in">
-          {showWebhookConfig && userData.role === 'admin' ? (
+          {showWebhookConfig && userData?.role === 'admin' ? (
             <WebhookConfig />
-          ) : showDashboard && userData.role === 'admin' ? (
+          ) : showDashboard && userData?.role === 'admin' ? (
             <Dashboard tickets={tickets} />
-          ) : showUserManagement && userData.role === 'admin' ? (
+          ) : showUserManagement && userData?.role === 'admin' ? (
             <UserManagement
               users={users}
               onCreateUser={createUser}
@@ -293,12 +300,43 @@ if (loading && !toast.isActive(TOAST_ID)) {
         />
       </div>
 
-      <TicketList
-        tickets={filteredTickets}
-        onTicketClick={handleTicketClick}
-        onDeleteTicket={handleDeleteTicket}
-        onStatusChange={handleStatusChange}
-      />
+      <div className="flex items-center space-x-4">
+        <div className="flex items-center">
+          <label className="inline-flex items-center cursor-pointer">
+            <input 
+              type="checkbox" 
+              className="sr-only peer"
+              checked={showArchived}
+              onChange={() => setShowArchived(!showArchived)}
+            />
+            <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+            <span className="ml-3 text-sm font-medium text-gray-700 flex items-center">
+              <Archive className="h-4 w-4 mr-1" />
+              Arquivados
+            </span>
+          </label>
+        </div>
+        
+        <button
+          onClick={clearFilters}
+          className="px-3 py-1 text-sm bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200 flex items-center"
+          title="Limpar filtros"
+        >
+          <Filter className="h-4 w-4 mr-1" />
+          Limpar Filtros
+        </button>
+      </div>
+
+      <div className="view-mode-toggle hidden"></div>
+
+      <div className="ticket-list">
+        <TicketList
+          tickets={filteredTickets}
+          onTicketClick={handleTicketClick}
+          onDeleteTicket={handleDeleteTicket}
+          onStatusChange={handleStatusChange}
+        />
+      </div>
 
       {selectedTicket && (
         <TicketDetailsModal
@@ -312,6 +350,9 @@ if (loading && !toast.isActive(TOAST_ID)) {
           )}
         </div>
       </div>
+      
+      {/* Componente de tutorial */}
+      <AppTour />
     </div>
   );
 }

@@ -19,12 +19,8 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { 
   Save, 
   Share2, 
-  Tag, 
   Plus, 
   Search, 
-  Calendar,
-  ChevronDown,
-  Users,
   Globe,
   Lock,
   Trash2,
@@ -56,7 +52,7 @@ import type { DiaryEntry } from '../types/diary';
 
 export function DiaryPage() {
   const navigate = useNavigate();
-  const { user, userData } = useAuthStore();
+  const { user } = useAuthStore();
   const { 
     entries, 
     adminUsers,
@@ -73,9 +69,7 @@ export function DiaryPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [showShareModal, setShowShareModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [isPublic, setIsPublic] = useState(false);
-  const [title, setTitle] = useState('');
   const [tempTitle, setTempTitle] = useState('');
   const [selectedAdmins, setSelectedAdmins] = useState<string[]>([]);
   const [sharing, setSharing] = useState(false);
@@ -109,14 +103,13 @@ export function DiaryPage() {
       })
     ],
     content: selectedEntry?.content || '',
-    onUpdate: ({ editor }) => {
+    onUpdate: () => {
       // Removido o salvamento automático
     }
   });
 
   useEffect(() => {
     if (selectedEntry) {
-      setTitle(selectedEntry.title);
       setTempTitle(selectedEntry.title);
       setIsPublic(selectedEntry.isPublic);
       setSelectedAdmins(selectedEntry.sharedWith || []);
@@ -140,7 +133,6 @@ export function DiaryPage() {
         title: tempTitle,
         updatedAt: new Date()
       });
-      setTitle(tempTitle);
       setSelectedEntry(prev => prev ? { ...prev, title: tempTitle } : null);
     } catch (error) {
       console.error('Erro ao salvar entrada:', error);
@@ -162,19 +154,6 @@ export function DiaryPage() {
     }
   }, [user, fetchEntries]);
 
-  const handleSave = async (content: string) => {
-    if (!selectedEntry || !user) return;
-
-    try {
-      await updateEntry(selectedEntry.id, {
-        content,
-        updatedAt: new Date()
-      });
-    } catch (error) {
-      console.error('Erro ao salvar entrada:', error);
-    }
-  };
-
   const handleNewEntry = async () => {
     if (!user) return;
 
@@ -189,7 +168,7 @@ export function DiaryPage() {
       });
 
       setSelectedEntry(newEntry);
-      setTitle(newEntry.title);
+      setTempTitle(newEntry.title);
       
       if (editor) {
         editor.commands.setContent('');
@@ -290,6 +269,7 @@ export function DiaryPage() {
       <button
         onClick={() => navigate('/')}
         className="fixed top-4 left-72 z-50 flex items-center px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
+        title="Voltar para a página inicial"
       >
         <ArrowLeft className="h-4 w-4 mr-2" />
         Voltar
@@ -302,6 +282,7 @@ export function DiaryPage() {
           <button
             onClick={handleNewEntry}
             className="p-2 text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white"
+            title="Nova entrada"
           >
             <Plus className="h-5 w-5" />
           </button>
@@ -426,24 +407,28 @@ export function DiaryPage() {
               <button
                 onClick={() => editor.chain().focus().toggleBold().run()}
                 className={`p-2 rounded ${editor.isActive('bold') ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                title="Negrito"
               >
                 <Bold className="h-4 w-4" />
               </button>
               <button
                 onClick={() => editor.chain().focus().toggleItalic().run()}
                 className={`p-2 rounded ${editor.isActive('italic') ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                title="Itálico"
               >
                 <Italic className="h-4 w-4" />
               </button>
               <button
                 onClick={() => editor.chain().focus().toggleStrike().run()}
                 className={`p-2 rounded ${editor.isActive('strike') ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                title="Tachado"
               >
                 <Strikethrough className="h-4 w-4" />
               </button>
               <button
                 onClick={() => editor.chain().focus().toggleCode().run()}
                 className={`p-2 rounded ${editor.isActive('code') ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                title="Código"
               >
                 <Code className="h-4 w-4" />
               </button>
@@ -453,24 +438,28 @@ export function DiaryPage() {
               <button
                 onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
                 className={`p-2 rounded ${editor.isActive('heading', { level: 2 }) ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                title="Título"
               >
                 <Heading className="h-4 w-4" />
               </button>
               <button
                 onClick={() => editor.chain().focus().toggleBulletList().run()}
                 className={`p-2 rounded ${editor.isActive('bulletList') ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                title="Lista com marcadores"
               >
                 <List className="h-4 w-4" />
               </button>
               <button
                 onClick={() => editor.chain().focus().toggleOrderedList().run()}
                 className={`p-2 rounded ${editor.isActive('orderedList') ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                title="Lista numerada"
               >
                 <ListOrdered className="h-4 w-4" />
               </button>
               <button
                 onClick={() => editor.chain().focus().toggleTaskList().run()}
                 className={`p-2 rounded ${editor.isActive('taskList') ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                title="Lista de tarefas"
               >
                 <CheckSquare className="h-4 w-4" />
               </button>
@@ -480,18 +469,21 @@ export function DiaryPage() {
               <button
                 onClick={() => editor.chain().focus().setTextAlign('left').run()}
                 className={`p-2 rounded ${editor.isActive({ textAlign: 'left' }) ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                title="Alinhar à esquerda"
               >
                 <AlignLeft className="h-4 w-4" />
               </button>
               <button
                 onClick={() => editor.chain().focus().setTextAlign('center').run()}
                 className={`p-2 rounded ${editor.isActive({ textAlign: 'center' }) ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                title="Centralizar"
               >
                 <AlignCenter className="h-4 w-4" />
               </button>
               <button
                 onClick={() => editor.chain().focus().setTextAlign('right').run()}
                 className={`p-2 rounded ${editor.isActive({ textAlign: 'right' }) ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                title="Alinhar à direita"
               >
                 <AlignRight className="h-4 w-4" />
               </button>
@@ -501,6 +493,7 @@ export function DiaryPage() {
               <button
                 onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()}
                 className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                title="Inserir tabela"
               >
                 <TableIcon className="h-4 w-4" />
               </button>
@@ -512,6 +505,7 @@ export function DiaryPage() {
                   }
                 }}
                 className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                title="Inserir imagem"
               >
                 <ImageIcon className="h-4 w-4" />
               </button>
@@ -523,12 +517,14 @@ export function DiaryPage() {
                   }
                 }}
                 className={`p-2 rounded ${editor.isActive('link') ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                title="Inserir link"
               >
                 <LinkIcon className="h-4 w-4" />
               </button>
               <button
                 onClick={() => editor.chain().focus().toggleHighlight().run()}
                 className={`p-2 rounded ${editor.isActive('highlight') ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                title="Destacar texto"
               >
                 <Highlighter className="h-4 w-4" />
               </button>
@@ -539,6 +535,7 @@ export function DiaryPage() {
                 onClick={() => editor.chain().focus().undo().run()}
                 disabled={!editor.can().undo()}
                 className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+                title="Desfazer"
               >
                 <Undo className="h-4 w-4" />
               </button>
@@ -546,6 +543,7 @@ export function DiaryPage() {
                 onClick={() => editor.chain().focus().redo().run()}
                 disabled={!editor.can().redo()}
                 className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+                title="Refazer"
               >
                 <Redo className="h-4 w-4" />
               </button>
