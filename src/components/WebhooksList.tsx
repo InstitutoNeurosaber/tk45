@@ -30,7 +30,6 @@ const eventLabels: Record<string, string> = {
   'ticket.created': 'Ticket Criado',
   'ticket.updated': 'Ticket Atualizado',
   'ticket.status_changed': 'Status Alterado',
-  'ticket.comment_added': 'Comentário Adicionado',
   'ticket.assigned': 'Ticket Atribuído',
   'ticket.deleted': 'Ticket Excluído'
 };
@@ -159,7 +158,7 @@ export function WebhooksList() {
     try {
       // Teste com evento de comentário adicionado
       const payload = {
-        event: 'ticket.comment_added',
+        event: 'ticket.created',
         data: {
           ticketId: 'test-123',
           comment: {

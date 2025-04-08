@@ -77,10 +77,20 @@ export function N8nDocs() {
             <li><code>ticket.created</code> - Quando um novo ticket é criado</li>
             <li><code>ticket.updated</code> - Quando um ticket é atualizado</li>
             <li><code>ticket.status_changed</code> - Quando o status de um ticket é alterado</li>
-            <li><code>ticket.comment_added</code> - Quando um comentário é adicionado</li>
             <li><code>ticket.assigned</code> - Quando um ticket é atribuído</li>
             <li><code>ticket.deleted</code> - Quando um ticket é excluído</li>
           </ul>
+
+          <div className="my-6">
+            <h3 className="text-lg font-medium mb-2">Tipos de Eventos</h3>
+            <ul className="list-disc pl-6 space-y-1 text-gray-700">
+              <li><code>ticket.created</code> - Quando um ticket é criado</li>
+              <li><code>ticket.updated</code> - Quando um ticket é atualizado</li>
+              <li><code>ticket.status_changed</code> - Quando o status de um ticket é alterado</li>
+              <li><code>ticket.assigned</code> - Quando um ticket é atribuído a um usuário</li>
+              <li><code>ticket.deleted</code> - Quando um ticket é excluído</li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>

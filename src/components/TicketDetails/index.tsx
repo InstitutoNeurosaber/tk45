@@ -7,7 +7,6 @@ import { TicketHeader } from './TicketHeader';
 import { TicketInfo } from './TicketInfo';
 import { TicketStatus } from './TicketStatus';
 import { TicketPriority } from './TicketPriority';
-import { TicketComments } from './TicketComments';
 import { DeleteConfirmationModal } from '../DeleteConfirmationModal';
 import { statusLabels, priorityLabels, statusColors, priorityColors } from '../../types/ticket';
 import type { Ticket } from '../../types/ticket';
@@ -76,10 +75,6 @@ export function TicketDetails({ ticket, onClose, onStatusChange, onUpdate }: Tic
     } catch (error) {
       console.error('Erro ao excluir ticket:', error);
     }
-  };
-
-  const handleViewComments = () => {
-    navigate(`/comments/${ticket.id}`);
   };
 
   if (error) {
@@ -160,17 +155,6 @@ export function TicketDetails({ ticket, onClose, onStatusChange, onUpdate }: Tic
                 ) : (
                   <p className="text-gray-700 whitespace-pre-wrap">{description}</p>
                 )}
-              </div>
-
-              {/* Comentários */}
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
-                <TicketComments ticket={ticket} />
-                <button
-                  onClick={handleViewComments}
-                  className="mt-4 w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                >
-                  Ver Todos os Comentários
-                </button>
               </div>
             </div>
 

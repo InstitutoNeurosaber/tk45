@@ -110,33 +110,6 @@ const testPayloads: Record<WebhookEvent, unknown> = {
     isTest: true,
     timestamp: new Date().toISOString()
   },
-  'ticket.comment_added': {
-    ticketId: 'test-123',
-    comment: {
-      id: 'comment-123',
-      content: 'Este é um comentário de teste',
-      userId: 'test-user',
-      createdAt: new Date().toISOString()
-    },
-    metadata: {
-      ticketTitle: 'Teste de Webhook',
-      ticketStatus: 'open',
-      taskId: 'task-123',
-      clickup: {
-        status: clickupStatusMap.open,
-        priority: clickupPriorityMap.medium,
-        due_date: Date.now() + priorityDeadlines.medium,
-        due_date_time: true,
-        time_estimate: 8640000,
-        start_date: Date.now(),
-        start_date_time: true,
-        points: 3
-      },
-      commentType: 'public'
-    },
-    isTest: true,
-    timestamp: new Date().toISOString()
-  },
   'ticket.assigned': {
     ticket: {
       id: 'test-123',
@@ -260,19 +233,19 @@ export function WebhookTest() {
       <h2 className="text-lg font-medium text-gray-900 mb-4">Testar Webhook</h2>
       
       <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700">
-            Selecione o Evento
+        <div className="mb-4">
+          <label htmlFor="event-type" className="block text-sm font-medium text-gray-700 mb-1">
+            Tipo de Evento
           </label>
           <select
+            id="event-type"
             value={selectedEvent}
             onChange={(e) => setSelectedEvent(e.target.value as WebhookEvent)}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+            className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
           >
             <option value="ticket.created">Ticket Criado</option>
             <option value="ticket.updated">Ticket Atualizado</option>
             <option value="ticket.status_changed">Status Alterado</option>
-            <option value="ticket.comment_added">Comentário Adicionado</option>
             <option value="ticket.assigned">Ticket Atribuído</option>
             <option value="ticket.deleted">Ticket Excluído</option>
           </select>

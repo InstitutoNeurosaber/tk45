@@ -96,32 +96,6 @@ const testPayloads: Record<WebhookEvent, unknown> = {
     isTest: true,
     timestamp: new Date().toISOString()
   },
-  'ticket.comment_added': {
-    ticketId: 'test-123',
-    comment: {
-      id: 'comment-123',
-      content: 'Este é um comentário de teste',
-      userId: 'test-user',
-      createdAt: new Date().toISOString()
-    },
-    metadata: {
-      ticketTitle: 'Teste de Webhook',
-      ticketStatus: 'open',
-      clickup: {
-        status: 'ABERTO',
-        priority: 3,
-        due_date: Date.now() + (7 * 24 * 60 * 60 * 1000),
-        due_date_time: true,
-        time_estimate: 8640000,
-        start_date: Date.now(),
-        start_date_time: true,
-        points: 3
-      },
-      commentType: 'public'
-    },
-    isTest: true,
-    timestamp: new Date().toISOString()
-  },
   'ticket.assigned': {
     ticket: {
       id: 'test-123',
@@ -194,7 +168,6 @@ const eventLabels: Record<WebhookEvent, string> = {
   'ticket.created': 'Ticket Criado',
   'ticket.updated': 'Ticket Atualizado',
   'ticket.status_changed': 'Status Alterado',
-  'ticket.comment_added': 'Comentário Adicionado',
   'ticket.assigned': 'Ticket Atribuído',
   'ticket.deleted': 'Ticket Excluído'
 };

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { AlertCircle, Clock, MessageSquare, Eye, Link, Mail } from 'lucide-react';
+import { AlertCircle, Clock, MessageSquare, Eye, Link, Mail, Paperclip } from 'lucide-react';
 import { priorityColors, priorityLabels } from '../types/ticket';
 import type { Ticket } from '../types/ticket';
 
@@ -141,15 +141,9 @@ export function KanbanCard({ ticket, onClick, isDragging = false }: KanbanCardPr
             </div>
 
             <div className="flex items-center space-x-2">
-              {ticket.comments && ticket.comments.length > 0 && (
-                <div className="flex items-center text-blue-600">
-                  <MessageSquare className="w-4 h-4 mr-1" />
-                  <span>{ticket.comments.length}</span>
-                </div>
-              )}
               {ticket.attachments && ticket.attachments.length > 0 && (
-                <div className="flex items-center text-purple-600">
-                  <AlertCircle className="w-4 h-4 mr-1" />
+                <div className="flex items-center space-x-1 text-gray-600">
+                  <Paperclip className="w-4 h-4" />
                   <span>{ticket.attachments.length}</span>
                 </div>
               )}

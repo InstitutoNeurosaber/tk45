@@ -22,17 +22,14 @@ export function ApiDocs() {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const baseUrl = window.location.origin;
 
-  const endpoints = [
+  const apiEndpoints = [
     {
-      method: 'POST',
       path: '/api/tickets',
-      description: 'Criar novo ticket',
-      example: {
-        title: 'Novo Ticket',
-        description: 'Descrição do ticket',
-        category: 'software',
-        priority: 'medium'
-      }
+      method: 'GET',
+      description: 'Retorna todos os tickets',
+      params: [],
+      headers: [{ name: 'Authorization', description: 'Bearer {token}' }],
+      response: '[ { id, title, description, status, ... } ]'
     },
     {
       method: 'POST',
@@ -50,15 +47,6 @@ export function ApiDocs() {
       example: {
         priority: 'high',
         _method: 'PUT'
-      }
-    },
-    {
-      method: 'POST',
-      path: '/api/tickets/:id/comments',
-      description: 'Adicionar comentário ao ticket (substitua :id pelo ID do ticket)',
-      example: {
-        content: 'Novo comentário',
-        userId: 'user-id'
       }
     },
     {
@@ -321,7 +309,7 @@ export function ApiDocs() {
         </div>
 
         <div className="space-y-8">
-          {endpoints.map((endpoint, index) => (
+          {apiEndpoints.map((endpoint, index) => (
             <div key={index} className="border-b border-gray-200 pb-8 last:border-0">
               <div className="flex items-center space-x-3 mb-4">
                 <span className={`px-3 py-1 rounded-full text-sm font-medium ${

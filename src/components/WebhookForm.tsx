@@ -7,11 +7,10 @@ import { useWebhookStore } from '../stores/webhookStore';
 import { useAuthStore } from '../stores/authStore';
 import type { WebhookEvent, WebhookConfig } from '../types/webhook';
 
-const webhookEvents: { value: WebhookEvent; label: string }[] = [
+const eventOptions = [
   { value: 'ticket.created', label: 'Ticket Criado' },
   { value: 'ticket.updated', label: 'Ticket Atualizado' },
   { value: 'ticket.status_changed', label: 'Status do Ticket Alterado' },
-  { value: 'ticket.comment_added', label: 'Comentário Adicionado' },
   { value: 'ticket.assigned', label: 'Ticket Atribuído' },
   { value: 'ticket.deleted', label: 'Ticket Excluído' }
 ];
@@ -26,7 +25,7 @@ const webhookSchema = z.object({
   name: z.string().min(1, 'Nome é obrigatório'),
   url: urlSchema,
   testUrl: urlSchema.optional().nullable().or(z.literal('')),
-  events: z.array(z.enum(['ticket.created', 'ticket.updated', 'ticket.status_changed', 'ticket.comment_added', 'ticket.assigned', 'ticket.deleted'])).min(1, 'Selecione pelo menos um evento'),
+  events: z.array(z.enum(['ticket.created', 'ticket.updated', 'ticket.status_changed', 'ticket.assigned', 'ticket.deleted'])).min(1, 'Selecione pelo menos um evento'),
   headers: z.record(z.string().min(1, 'Valor não pode ser vazio')).optional(),
   active: z.boolean()
 });
@@ -104,19 +103,6 @@ export function WebhookForm({ webhook, onWebhookCreated, onWebhookUpdated, onCan
       });
     }
   }, [currentUrl, setValue, isDirty]);
-
-  // Verificar se o tipo de evento comentário está selecionado quando a URL contém 'comentario'
-  useEffect(() => {
-    if (!currentUrl || !isDirty || !Array.isArray(currentEvents)) return;
-
-    if (currentUrl.includes('/comentario') && !currentEvents.includes('ticket.comment_added')) {
-      setValue('events', [...currentEvents, 'ticket.comment_added'], { shouldValidate: true });
-      setTestResult({
-        success: true,
-        message: 'Evento "Comentário Adicionado" foi incluído automaticamente com base na URL'
-      });
-    }
-  }, [currentUrl, currentEvents, setValue, isDirty]);
 
   const onSubmit = async (data: WebhookFormData) => {
     if (!user) {
@@ -306,7 +292,7 @@ export function WebhookForm({ webhook, onWebhookCreated, onWebhookUpdated, onCan
             control={control}
             render={({ field }) => (
               <div className="mt-2 grid grid-cols-2 gap-2">
-                {webhookEvents.map((event) => (
+                {eventOptions.map((event) => (
                   <label key={event.value} className="inline-flex items-center">
                     <input
                       type="checkbox"

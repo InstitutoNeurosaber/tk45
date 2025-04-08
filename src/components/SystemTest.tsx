@@ -69,16 +69,16 @@ export function SystemTest() {
         if (!user) throw new Error('Usuário não autenticado');
 
         const testTicket = {
-          id: 'test',
-          title: '[TESTE] Webhook',
-          description: 'Teste de webhook',
+          id: 'test-ticket-1',
+          title: 'Ticket de Teste',
+          description: 'Este é um ticket de teste',
           status: 'open',
           priority: 'medium',
-          category: 'software',
-          userId: user.uid,
+          userId: 'test-user-id',
+          userName: 'Usuário de Teste',
           createdAt: new Date(),
           updatedAt: new Date(),
-          deadline: new Date(Date.now() + 24 * 60 * 60 * 1000)
+          attachments: []
         };
 
         await webhookService.sendWebhookNotification('ticket.created', testTicket);
