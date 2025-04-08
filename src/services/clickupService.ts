@@ -138,19 +138,26 @@ export class ClickUpService {
             
             // Mapeia o status usando a constante padronizada
             const clickupStatus = STATUS_MAP[ticket.status as keyof typeof STATUS_MAP] || STATUS_MAP.open;
-            await api.updateTaskStatus(ticket.taskId, clickupStatus);
             
-            // Atualiza outros campos se necessário
-            const updateData = {
-              name: ticket.title,
-              description: ticket.description,
-              priority: PRIORITY_MAP[ticket.priority as keyof typeof PRIORITY_MAP] || PRIORITY_MAP.medium,
-              dueDate: ticket.deadline instanceof Date ? 
-                ticket.deadline.toISOString() : 
-                new Date(ticket.deadline).toISOString()
-            };
+            // Cálculo de datas
+            const dueDate = this.getDateMilliseconds(ticket.deadline);
+            const startDate = this.getDateMilliseconds(ticket.createdAt);
+            // Tempo estimado (em milissegundos) - por padrão, definimos como o intervalo entre criação e prazo
+            const timeEstimate = dueDate && startDate ? dueDate - startDate : undefined;
             
             // Atualiza a tarefa com a API do ClickUp
+            const updateData = {
+              name: ticket.title,
+              description: ticket.description || "Sem descrição",
+              status: clickupStatus,
+              priority: PRIORITY_MAP[ticket.priority as keyof typeof PRIORITY_MAP] || PRIORITY_MAP.medium,
+              due_date: dueDate,
+              due_date_time: true, // Incluir horário na data de prazo
+              start_date: startDate,
+              start_date_time: true, // Incluir horário na data de início
+              time_estimate: timeEstimate
+            };
+            
             await api.request(`/task/${ticket.taskId}`, {
               method: 'PUT',
               body: JSON.stringify(updateData)
@@ -177,65 +184,29 @@ export class ClickUpService {
           throw new Error("Título do ticket é obrigatório para criar no ClickUp");
         }
         
-        // Garantir que a data de prazo está em formato válido
-        let dueDate: string | null = null;
-        if (ticket.deadline) {
-          if (ticket.deadline instanceof Date) {
-            dueDate = ticket.deadline.toISOString();
-          } else {
-            try {
-              const date = new Date(ticket.deadline);
-              if (isNaN(date.getTime())) {
-                console.warn("[ClickUpService] Data de prazo inválida, usando atual + 7 dias");
-                dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-              } else {
-                dueDate = date.toISOString();
-              }
-            } catch (e) {
-              console.warn("[ClickUpService] Erro ao converter data, usando atual + 7 dias");
-              dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-            }
-          }
-        } else {
-          console.warn("[ClickUpService] Ticket sem prazo, usando atual + 7 dias");
-          dueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-        }
+        // Cálculo de datas com timestamps
+        const dueDate = this.getDateMilliseconds(ticket.deadline);
+        const startDate = this.getDateMilliseconds(ticket.createdAt);
+        // Tempo estimado (em milissegundos) - por padrão, definimos como o intervalo entre criação e prazo
+        const timeEstimate = dueDate && startDate ? dueDate - startDate : undefined;
         
-        // Adicionar ID personalizado para rastreamento
-        let customFields = [];
-        if (isValidTicketId(ticket.id)) {
-          // Não enviar o campo personalizado custom_fields
-          // O problema está aqui - o campo está causando erro porque o ID precisa ser um UUID válido
-          // e nós não temos como saber o UUID correto do campo personalizado sem consultar a API do ClickUp
-          // Para resolver, vamos comentar este trecho e não enviar campos personalizados temporariamente
-          /*
-          customFields.push({
-            id: TICKET_ID_FIELD_NAME,
-            value: `ticket-${ticket.id.substring(0, 10)}`
-          });
-          */
-        } else {
-          /*
-          customFields.push({
-            id: TICKET_ID_FIELD_NAME,
-            value: `ticket-${Date.now()}`
-          });
-          */
-        }
+        // Adicionar ID personalizado para rastreamento temporariamente ignorado
+        // devido aos problemas com UUID no custom_fields        
         
         const taskData = {
-          title: ticket.title,
           name: ticket.title,
           description: ticket.description || "Sem descrição",
           status: STATUS_MAP[ticket.status as keyof typeof STATUS_MAP] || STATUS_MAP.open,
           priority: PRIORITY_MAP[ticket.priority as keyof typeof PRIORITY_MAP] || PRIORITY_MAP.medium,
-          dueDate: dueDate,
-          // Removemos o campo custom_fields completamente para evitar o erro de UUID
-          // custom_fields: customFields
+          due_date: dueDate,
+          due_date_time: true, // Incluir horário na data de prazo
+          start_date: startDate,
+          start_date_time: true, // Incluir horário na data de início
+          time_estimate: timeEstimate
         };
         
         // Cria uma nova tarefa
-        console.log(`[ClickUpService] Criando nova tarefa para ticket ${ticket.id}`);
+        console.log(`[ClickUpService] Criando nova tarefa para ticket ${ticket.id}`, taskData);
         const response = await api.createTask(config.listId, taskData);
         
         if (response && typeof response === 'object' && 'id' in response) {
@@ -260,6 +231,29 @@ export class ClickUpService {
         throw new Error(`Erro ao sincronizar com ClickUp: ${error.message}`);
       }
       throw new Error(ERROR_MESSAGES.DEFAULT_ERROR);
+    }
+  }
+
+  /**
+   * Converte uma data para milissegundos (formato aceito pelo ClickUp)
+   */
+  private getDateMilliseconds(date: Date | string | undefined): number | undefined {
+    if (!date) return undefined;
+    
+    try {
+      if (date instanceof Date) {
+        return date.getTime();
+      } else {
+        const parsedDate = new Date(date);
+        if (isNaN(parsedDate.getTime())) {
+          console.warn("[ClickUpService] Data inválida:", date);
+          return undefined;
+        }
+        return parsedDate.getTime();
+      }
+    } catch (error) {
+      console.warn("[ClickUpService] Erro ao converter data:", error);
+      return undefined;
     }
   }
 

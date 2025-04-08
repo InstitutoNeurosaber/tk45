@@ -18,18 +18,18 @@ export const REVERSE_STATUS_MAP = {
 
 // Mapeamento de prioridade do sistema para ClickUp
 export const PRIORITY_MAP = {
-  'low': 3,
-  'medium': 2, 
-  'high': 1,
-  'critical': 4
+  'low': 4,      // Baixa
+  'medium': 3,   // Normal
+  'high': 2,     // Alta
+  'critical': 1  // Urgente
 };
 
 // Mapeamento inverso de prioridade (de ClickUp para o sistema)
 export const REVERSE_PRIORITY_MAP = {
-  3: 'low',
-  2: 'medium',
-  1: 'high',
-  4: 'critical'
+  4: 'low',      // Baixa
+  3: 'medium',   // Normal
+  2: 'high',     // Alta
+  1: 'critical'  // Urgente
 };
 
 // Constantes de URLs e configurações

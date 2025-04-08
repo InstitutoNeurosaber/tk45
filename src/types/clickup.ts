@@ -34,6 +34,12 @@ export interface ClickUpTask {
   status: string;
   priority: number;
   assignees: ClickUpUser[];
-  dueDate: string;
+  dueDate?: string;
+  due_date?: number; // Timestamp em milissegundos
+  due_date_time?: boolean; // Se true, a data inclui informação de hora
+  startDate?: string;
+  start_date?: number; // Timestamp em milissegundos
+  start_date_time?: boolean; // Se true, a data inclui informação de hora
+  time_estimate?: number; // Tempo estimado em milissegundos
   url: string;
 }

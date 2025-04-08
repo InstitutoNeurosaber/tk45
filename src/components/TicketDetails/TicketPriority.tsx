@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { AlertTriangle, Eye } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { AlertTriangle, Eye, Check, Save, Edit2, X } from 'lucide-react';
 import { priorityLabels } from '../../../types/ticket';
 import { useAuthStore } from '../../../stores/authStore';
 import { 
@@ -23,19 +23,29 @@ export function TicketPriority({ ticket, onChange, disabled }: TicketPriorityPro
   const [showPreview, setShowPreview] = useState(false);
   const [selectedPriority, setSelectedPriority] = useState<TicketPriority>(ticket.priority);
   const [priorityReason, setPriorityReason] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+  
+  // Reseta o estado quando o ticket muda
+  useEffect(() => {
+    setSelectedPriority(ticket.priority);
+    setIsEditing(false);
+  }, [ticket.priority, ticket.id]);
 
   const isAdmin = userData?.role === 'admin';
   const isIncreasingPriority = getPriorityLevel(selectedPriority) > getPriorityLevel(ticket.priority);
   const suggestions = getPrioritySuggestions(ticket.priority, selectedPriority);
+  const priorityChanged = selectedPriority !== ticket.priority;
 
   const handlePriorityChange = (newPriority: TicketPriority) => {
-    if (!isAdmin) return;
+    if (!isAdmin || disabled) return;
+    setSelectedPriority(newPriority);
+  };
+
+  const handleSavePriority = () => {
+    if (!isAdmin || disabled || !priorityChanged) return;
     
-    if (newPriority !== ticket.priority) {
-      setSelectedPriority(newPriority);
-      setShowReasonDialog(true);
-      setPriorityReason(''); // Limpa a razão ao mudar a prioridade
-    }
+    setShowReasonDialog(true);
+    setPriorityReason(''); // Limpa a razão ao abrir o diálogo
   };
 
   const handleConfirmPriorityChange = () => {
@@ -45,6 +55,12 @@ export function TicketPriority({ ticket, onChange, disabled }: TicketPriorityPro
     setShowReasonDialog(false);
     setShowPreview(false);
     setPriorityReason('');
+    setIsEditing(false);
+  };
+
+  const handleCancelEdit = () => {
+    setSelectedPriority(ticket.priority);
+    setIsEditing(false);
   };
 
   // Sugere palavras-chave baseadas no tipo de alteração
@@ -66,7 +82,19 @@ export function TicketPriority({ ticket, onChange, disabled }: TicketPriorityPro
   return (
     <>
       <div className="space-y-2">
-        <h3 className="text-lg font-medium text-gray-900">Prioridade</h3>
+        <div className="flex justify-between items-center">
+          <h3 className="text-lg font-medium text-gray-900">Prioridade</h3>
+          
+          {isAdmin && !disabled && !isEditing && (
+            <button
+              onClick={() => setIsEditing(true)}
+              className="flex items-center text-xs text-gray-600 hover:text-blue-600 transition-colors"
+            >
+              <Edit2 className="h-3 w-3 mr-1" />
+              Editar
+            </button>
+          )}
+        </div>
         
         {ticket.priorityLockedBy && (
           <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-md mb-4">
@@ -87,16 +115,53 @@ export function TicketPriority({ ticket, onChange, disabled }: TicketPriorityPro
           </div>
         )}
 
-        <select
-          value={selectedPriority}
-          onChange={(e) => handlePriorityChange(e.target.value as TicketPriority)}
-          disabled={disabled || !isAdmin}
-          className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:opacity-50"
-        >
-          {Object.entries(priorityLabels).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </select>
+        {isEditing ? (
+          <div className="space-y-3">
+            <div className="flex items-center">
+              <select
+                value={selectedPriority}
+                onChange={(e) => handlePriorityChange(e.target.value as TicketPriority)}
+                disabled={disabled || !isAdmin}
+                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:opacity-50"
+                aria-label="Selecionar prioridade do ticket"
+              >
+                {Object.entries(priorityLabels).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="flex space-x-2">
+              <button
+                onClick={handleSavePriority}
+                disabled={!priorityChanged || disabled}
+                className="flex items-center justify-center px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Save className="h-3 w-3 mr-1" />
+                Salvar
+              </button>
+              
+              <button
+                onClick={handleCancelEdit}
+                className="flex items-center justify-center px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-gray-500"
+              >
+                <X className="h-3 w-3 mr-1" />
+                Cancelar
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="px-3 py-2 bg-gray-50 rounded-md">
+            <div className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+              ticket.priority === 'critical' ? 'bg-red-100 text-red-800' :
+              ticket.priority === 'high' ? 'bg-orange-100 text-orange-800' :
+              ticket.priority === 'medium' ? 'bg-blue-100 text-blue-800' :
+              'bg-gray-100 text-gray-800'
+            }`}>
+              {priorityLabels[ticket.priority]}
+            </div>
+          </div>
+        )}
 
         {!isAdmin && (
           <p className="mt-2 text-sm text-gray-500">
@@ -220,7 +285,6 @@ export function TicketPriority({ ticket, onChange, disabled }: TicketPriorityPro
                   setShowReasonDialog(false);
                   setShowPreview(false);
                   setPriorityReason('');
-                  setSelectedPriority(ticket.priority);
                 }}
                 className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
               >

@@ -113,9 +113,36 @@ export class ClickUpAPI {
     
     console.log(`Criando tarefa na lista ${listId}:`, task);
     
+    // Garantir que os campos estejam no formato correto esperado pela API do ClickUp
+    const taskData: Record<string, any> = {
+      name: task.name,
+      description: task.description || "",
+      status: task.status,
+      priority: task.priority,
+    };
+    
+    // Adicionar campos de data e tempo estimado apenas se estiverem presentes
+    if (task.due_date) {
+      taskData.due_date = task.due_date;
+      if (task.due_date_time !== undefined) {
+        taskData.due_date_time = task.due_date_time;
+      }
+    }
+    
+    if (task.start_date) {
+      taskData.start_date = task.start_date;
+      if (task.start_date_time !== undefined) {
+        taskData.start_date_time = task.start_date_time;
+      }
+    }
+    
+    if (task.time_estimate) {
+      taskData.time_estimate = task.time_estimate;
+    }
+    
     return this.request<ClickUpTask>(`/list/${listId}/task`, {
       method: 'POST',
-      body: JSON.stringify(task)
+      body: JSON.stringify(taskData)
     });
   }
 
