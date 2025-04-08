@@ -105,8 +105,10 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
     }
   };
 
-  const handlePriorityChange = async (newPriority: TicketPriority) => {
-    if (userData?.role !== 'admin' && ticket.priorityLockedBy) {
+  const handlePriorityChange = async (newPriority: TicketPriority, reason?: string) => {
+    // Apenas administradores podem alterar a prioridade após a criação do ticket
+    if (userData?.role !== 'admin') {
+      setError('Apenas administradores podem alterar a prioridade do ticket após sua criação.');
       return;
     }
 
@@ -120,11 +122,10 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
         updatedAt: new Date()
       };
 
-      if (userData?.role === 'admin') {
-        updates.priorityLockedBy = userData.name;
-        updates.priorityLockedAt = new Date();
-        updates.priorityReason = priorityReason || 'não foi identificada urgência na situação';
-      }
+      // Registrar quem alterou a prioridade e quando
+      updates.priorityLockedBy = userData?.name || 'Administrador';
+      updates.priorityLockedAt = new Date();
+      updates.priorityReason = reason || 'não foi identificada urgência na situação';
 
       await updateTicket(ticket.id, updates);
       onUpdate({ ...ticket, ...updates });

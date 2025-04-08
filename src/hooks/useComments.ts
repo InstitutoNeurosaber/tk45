@@ -1,26 +1,26 @@
 import { useState, useEffect, useCallback } from 'react';
 import { 
   collection, 
+  doc, 
   addDoc, 
+  onSnapshot, 
   query, 
   orderBy, 
-  onSnapshot, 
   Timestamp, 
   updateDoc,
-  doc,
+  getDoc,
   deleteDoc,
-  getDoc
+  DocumentData,
+  QueryDocumentSnapshot,
+  QuerySnapshot,
+  serverTimestamp
 } from 'firebase/firestore';
-import { 
-  ref, 
-  uploadBytes, 
-  getDownloadURL, 
-  deleteObject 
-} from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../lib/firebase';
 import { useAuthStore } from '../stores/authStore';
 import { v4 as uuidv4 } from 'uuid';
 import { clickupService } from '../services/clickupService';
+import { getAuth } from 'firebase/auth';
 
 // Interfaces para usar no hook
 interface Comment {
@@ -44,72 +44,74 @@ interface CommentAttachment {
 }
 
 export function useComments(ticketId: string) {
+  const { user } = useAuthStore();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { user } = useAuthStore();
 
-  // Carregar comentários usando onSnapshot para atualizações em tempo real
+  // Carregar comentários em tempo real
   useEffect(() => {
     if (!ticketId) {
-      setError('ID do ticket não fornecido');
       setLoading(false);
+      setError('ID do ticket não fornecido');
+      return;
+    }
+
+    if (!user) {
+      setLoading(false);
+      setError('É necessário estar autenticado para visualizar comentários');
       return;
     }
 
     setLoading(true);
     setError(null);
 
-    try {
-      const commentsRef = collection(db, 'tickets', ticketId, 'comments');
-      const commentsQuery = query(commentsRef, orderBy('createdAt', 'asc'));
+    const commentsRef = collection(db, 'tickets', ticketId, 'comments');
+    const commentsQuery = query(commentsRef, orderBy('createdAt', 'asc'));
 
-      const unsubscribe = onSnapshot(
-        commentsQuery,
-        (snapshot: any) => {
-          try {
-            const commentsList = snapshot.docs.map((doc: any) => {
-              const data = doc.data();
-              return {
-                id: doc.id,
-                ticketId,
-                content: data.content,
-                userId: data.userId,
-                userName: data.userName,
-                userPhotoURL: data.userPhotoURL,
-                createdAt: data.createdAt?.toDate() || new Date(),
-                attachments: data.attachments || []
-              } as Comment;
-            });
-            
-            setComments(commentsList);
-            setLoading(false);
-          } catch (mapError) {
-            console.error('Erro ao processar comentários:', mapError);
-            setError('Falha ao processar os comentários. Por favor, tente novamente.');
-            setLoading(false);
-          }
-        },
-        (err: any) => {
-          console.error('Erro ao carregar comentários:', err);
-          if (err?.code === 'permission-denied') {
-            setError('Permissão negada para acessar os comentários. Verifique se você está autenticado.');
+    const unsubscribe = onSnapshot(
+      commentsQuery,
+      (snapshot: any) => {
+        const commentsList = snapshot.docs.map((doc: any) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            content: data.content,
+            userId: data.userId,
+            userName: data.userName,
+            userPhotoURL: data.userPhotoURL,
+            createdAt: data.createdAt.toDate(),
+            attachments: data.attachments || []
+          };
+        });
+
+        setComments(commentsList);
+        setLoading(false);
+      },
+      (err: Error) => {
+        console.error('Erro ao carregar comentários:', err);
+        
+        const firebaseErr = err as Error;
+        if ('code' in firebaseErr && typeof firebaseErr.code === 'string') {
+          if (firebaseErr.code === 'permission-denied') {
+            setError('Permissão negada. Verifique se você está autenticado e tem acesso a este ticket.');
+          } else if (firebaseErr.code === 'not-found') {
+            setError('Ticket não encontrado ou excluído.');
           } else {
-            setError('Falha ao carregar os comentários. Por favor, tente novamente.');
+            setError('Erro ao carregar comentários: ' + err.message);
           }
-          setLoading(false);
+        } else {
+          setError('Erro ao carregar comentários: ' + err.message);
         }
-      );
+        
+        setLoading(false);
+      }
+    );
 
-      return () => unsubscribe();
-    } catch (setupError) {
-      console.error('Erro ao configurar listener de comentários:', setupError);
-      setError('Falha ao configurar o sistema de comentários. Por favor, tente novamente.');
-      setLoading(false);
-      return () => {}; // Retorna uma função vazia para o useEffect
-    }
-  }, [ticketId]);
+    // Limpar o listener ao desmontar
+    return () => unsubscribe();
+  }, [ticketId, user]);
 
   // Adicionar um novo comentário
   const addComment = useCallback(async (content: string) => {

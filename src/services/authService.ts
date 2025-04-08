@@ -3,6 +3,7 @@ import {
   signInWithPopup,
   GoogleAuthProvider,
   signOut as firebaseSignOut,
+  sendPasswordResetEmail,
   type User
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
@@ -232,6 +233,18 @@ export const authService = {
       }
     } catch (error) {
       console.error('Erro ao verificar/criar usuário admin:', error);
+    }
+  },
+
+  async sendPasswordResetEmail(email: string): Promise<void> {
+    try {
+      await sendPasswordResetEmail(auth, email);
+    } catch (error) {
+      console.error('Erro ao enviar email de redefinição de senha:', error);
+      if (error instanceof Error) {
+        throw new Error(`Erro ao enviar email: ${error.message}`);
+      }
+      throw new Error('Erro ao enviar email de redefinição de senha');
     }
   }
 };

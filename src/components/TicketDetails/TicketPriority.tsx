@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { AlertTriangle, Eye, Check, Save, Edit2, X } from 'lucide-react';
-import { priorityLabels } from '../../../types/ticket';
-import { useAuthStore } from '../../../stores/authStore';
+import { AlertTriangle, Eye, Check, Save, Edit2, X, Lock } from 'lucide-react';
+import { priorityLabels } from '../../types/ticket';
+import { useAuthStore } from '../../stores/authStore';
 import { 
   getPlaceholderText, 
   getPriorityLevel,
   getPrioritySuggestions,
   increaseKeywords,
   decreaseKeywords 
-} from '../../../utils/priorityMessages';
-import type { Ticket, TicketPriority } from '../../../types/ticket';
+} from '../../utils/priorityMessages';
+import type { Ticket, TicketPriority } from '../../types/ticket';
 
 interface TicketPriorityProps {
   ticket: Ticket;
@@ -24,11 +24,13 @@ export function TicketPriority({ ticket, onChange, disabled }: TicketPriorityPro
   const [selectedPriority, setSelectedPriority] = useState<TicketPriority>(ticket.priority);
   const [priorityReason, setPriorityReason] = useState('');
   const [isEditing, setIsEditing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   // Reseta o estado quando o ticket muda
   useEffect(() => {
     setSelectedPriority(ticket.priority);
     setIsEditing(false);
+    setError(null);
   }, [ticket.priority, ticket.id]);
 
   const isAdmin = userData?.role === 'admin';
@@ -42,14 +44,24 @@ export function TicketPriority({ ticket, onChange, disabled }: TicketPriorityPro
   };
 
   const handleSavePriority = () => {
-    if (!isAdmin || disabled || !priorityChanged) return;
+    if (!isAdmin) {
+      setError('Apenas administradores podem alterar a prioridade do ticket.');
+      return;
+    }
+    
+    if (disabled || !priorityChanged) return;
     
     setShowReasonDialog(true);
     setPriorityReason(''); // Limpa a razão ao abrir o diálogo
   };
 
   const handleConfirmPriorityChange = () => {
-    if (!isAdmin || !priorityReason.trim()) return;
+    if (!isAdmin) {
+      setError('Apenas administradores podem alterar a prioridade do ticket.');
+      return;
+    }
+    
+    if (!priorityReason.trim()) return;
     
     onChange(selectedPriority, priorityReason);
     setShowReasonDialog(false);
@@ -61,6 +73,7 @@ export function TicketPriority({ ticket, onChange, disabled }: TicketPriorityPro
   const handleCancelEdit = () => {
     setSelectedPriority(ticket.priority);
     setIsEditing(false);
+    setError(null);
   };
 
   // Sugere palavras-chave baseadas no tipo de alteração
@@ -96,6 +109,15 @@ export function TicketPriority({ ticket, onChange, disabled }: TicketPriorityPro
           )}
         </div>
         
+        {error && (
+          <div className="bg-red-50 border-l-4 border-red-400 p-3 rounded-r-md mb-2">
+            <div className="flex items-start">
+              <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5" />
+              <p className="ml-2 text-sm text-red-700">{error}</p>
+            </div>
+          </div>
+        )}
+
         {ticket.priorityLockedBy && (
           <div className="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-md mb-4">
             <div className="flex items-start">
@@ -108,7 +130,7 @@ export function TicketPriority({ ticket, onChange, disabled }: TicketPriorityPro
                   Motivo: {ticket.priorityReason}
                 </p>
                 <p className="mt-2 text-xs text-blue-500">
-                  Alterado por {ticket.priorityLockedBy} em {ticket.priorityLockedAt?.toLocaleString('pt-BR')}
+                  Alterado por {ticket.priorityLockedBy} em {ticket.priorityLockedAt ? new Date(ticket.priorityLockedAt).toLocaleString('pt-BR') : ''}
                 </p>
               </div>
             </div>
@@ -134,7 +156,7 @@ export function TicketPriority({ ticket, onChange, disabled }: TicketPriorityPro
             <div className="flex space-x-2">
               <button
                 onClick={handleSavePriority}
-                disabled={!priorityChanged || disabled}
+                disabled={!priorityChanged || disabled || !isAdmin}
                 className="flex items-center justify-center px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Save className="h-3 w-3 mr-1" />
@@ -159,12 +181,14 @@ export function TicketPriority({ ticket, onChange, disabled }: TicketPriorityPro
               'bg-gray-100 text-gray-800'
             }`}>
               {priorityLabels[ticket.priority]}
+              {!isAdmin && <Lock className="h-3 w-3 ml-1" aria-label="Bloqueado para edição" />}
             </div>
           </div>
         )}
 
         {!isAdmin && (
-          <p className="mt-2 text-sm text-gray-500">
+          <p className="mt-2 text-sm text-gray-500 flex items-center">
+            <Lock className="h-3 w-3 mr-1 text-gray-400" />
             Apenas administradores podem alterar a prioridade do ticket.
           </p>
         )}
@@ -292,7 +316,7 @@ export function TicketPriority({ ticket, onChange, disabled }: TicketPriorityPro
               </button>
               <button
                 onClick={handleConfirmPriorityChange}
-                disabled={!priorityReason.trim()}
+                disabled={!priorityReason.trim() || !isAdmin}
                 className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
               >
                 Confirmar Alteração

@@ -23,6 +23,7 @@ interface AuthState {
   signUp: (email: string, password: string, name: string) => Promise<void>;
   signOut: () => Promise<void>;
   fetchUserData: (userId: string) => Promise<UserData | null>;
+  sendPasswordReset: (email: string) => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -107,14 +108,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     } finally {
       set({ loading: false });
     }
+  },
+  
+  sendPasswordReset: async (email: string) => {
+    try {
+      set({ loading: true, error: null });
+      await authService.sendPasswordResetEmail(email);
+    } catch (error) {
+      set({ error: (error as Error).message });
+      throw error;
+    } finally {
+      set({ loading: false });
+    }
   }
 }));
 
 // Observar mudanças no estado de autenticação
 onAuthStateChanged(auth, async (user) => {
   if (user) {
-    const userData = await useAuthStore.getState().fetchUserData(user.uid);
-    useAuthStore.setState({ user, userData, loading: false });
+    useAuthStore.setState({ user, loading: false });
+    await useAuthStore.getState().fetchUserData(user.uid);
   } else {
     useAuthStore.setState({ user: null, userData: null, loading: false });
   }
