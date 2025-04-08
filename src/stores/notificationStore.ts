@@ -1,19 +1,5 @@
 import { create } from 'zustand';
-import { 
-  collection, 
-  addDoc, 
-  updateDoc, 
-  deleteDoc,
-  doc, 
-  onSnapshot, 
-  query, 
-  where,
-  orderBy,
-  getDocs,
-  writeBatch,
-  Timestamp
-} from 'firebase/firestore';
-import { db } from '../lib/firebase';
+import { notificationService } from '../services/notificationService';
 import type { Notification } from '../types/ticket';
 
 interface NotificationState {
@@ -42,14 +28,10 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   createNotification: async (notificationData) => {
     try {
       set({ loading: true, error: null });
-      const notificationsRef = collection(db, 'notifications');
-      await addDoc(notificationsRef, {
-        ...notificationData,
-        read: false,
-        createdAt: Timestamp.now()
-      });
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Erro ao criar notificação' });
+      await notificationService.createNotification(notificationData);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao criar notificação';
+      set({ error: errorMessage });
       throw error;
     } finally {
       set({ loading: false });
@@ -59,12 +41,10 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   markAsRead: async (notificationId) => {
     try {
       set({ loading: true, error: null });
-      const notificationRef = doc(db, 'notifications', notificationId);
-      await updateDoc(notificationRef, {
-        read: true
-      });
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Erro ao marcar notificação como lida' });
+      await notificationService.markAsRead(notificationId);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao marcar notificação como lida';
+      set({ error: errorMessage });
       throw error;
     } finally {
       set({ loading: false });
@@ -74,22 +54,10 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   markAllAsRead: async (userId) => {
     try {
       set({ loading: true, error: null });
-      const batch = writeBatch(db);
-      const notificationsRef = collection(db, 'notifications');
-      const q = query(
-        notificationsRef,
-        where('userId', '==', userId),
-        where('read', '==', false)
-      );
-      
-      const snapshot = await getDocs(q);
-      snapshot.docs.forEach(doc => {
-        batch.update(doc.ref, { read: true });
-      });
-      
-      await batch.commit();
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Erro ao marcar todas notificações como lidas' });
+      await notificationService.markAllAsRead(userId);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao marcar todas notificações como lidas';
+      set({ error: errorMessage });
       throw error;
     } finally {
       set({ loading: false });
@@ -99,10 +67,10 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   deleteNotification: async (notificationId) => {
     try {
       set({ loading: true, error: null });
-      const notificationRef = doc(db, 'notifications', notificationId);
-      await deleteDoc(notificationRef);
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Erro ao excluir notificação' });
+      await notificationService.deleteNotification(notificationId);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao excluir notificação';
+      set({ error: errorMessage });
       throw error;
     } finally {
       set({ loading: false });
@@ -112,18 +80,10 @@ export const useNotificationStore = create<NotificationState>((set) => ({
   clearAll: async (userId) => {
     try {
       set({ loading: true, error: null });
-      const batch = writeBatch(db);
-      const notificationsRef = collection(db, 'notifications');
-      const q = query(notificationsRef, where('userId', '==', userId));
-      
-      const snapshot = await getDocs(q);
-      snapshot.docs.forEach(doc => {
-        batch.delete(doc.ref);
-      });
-      
-      await batch.commit();
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'Erro ao limpar todas as notificações' });
+      await notificationService.clearAll(userId);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro ao limpar todas as notificações';
+      set({ error: errorMessage });
       throw error;
     } finally {
       set({ loading: false });

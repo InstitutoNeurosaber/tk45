@@ -15,68 +15,71 @@ export class ClickUpAPI {
     this.controller = new AbortController();
   }
 
-  public async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  /**
+   * Realiza uma requisição à API do ClickUp
+   * @param endpoint Endpoint da API (sem a base URL)
+   * @param options Opções da requisição
+   * @returns Resposta da API
+   */
+  private async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${CLICKUP_API_BASE}${endpoint}`;
     
+    const headers = {
+      'Authorization': this.apiKey,
+      'Content-Type': 'application/json',
+      ...options.headers
+    };
+    
     try {
-      console.log(`Fazendo requisição para: ${url}`);
+      console.log(`[ClickUp API] Requisição para ${endpoint} (${options.method || 'GET'})`);
       
       const response = await fetch(url, {
         ...options,
-        headers: {
-          'Authorization': this.apiKey,
-          'Content-Type': 'application/json',
-          ...options.headers
-        },
-        signal: this.controller.signal
+        headers
       });
-
-      if (!response.ok) {
-        let errorData = { err: 'Erro desconhecido' };
-        
-        try {
-          errorData = await response.json();
-          console.error(`Erro na requisição para ${url}:`, errorData);
-        } catch (parseError) {
-          console.error(`Não foi possível analisar resposta de erro para ${url}:`, parseError);
-        }
-        
-        // Tratamento específico por código de status
-        switch (response.status) {
-          case 401:
-            throw new Error(ERROR_MESSAGES.INVALID_API_KEY);
-          case 403:
-            throw new Error(ERROR_MESSAGES.UNAUTHORIZED);
-          case 404:
-            throw new Error(ERROR_MESSAGES.LIST_NOT_FOUND);
-          case 400:
-            // Verificar se é o erro específico de UUID
-            if (errorData.err && errorData.err.includes('Field is must be a valid UUID')) {
-              console.error("[ClickUpAPI] Erro de UUID inválido em campo personalizado");
-              throw new Error(ERROR_MESSAGES.INVALID_UUID);
-            }
-            // Para erros 400, verificar se é relacionado a status não encontrado
-            if (errorData.err && errorData.err.includes('Status not found')) {
-              throw new Error(ERROR_MESSAGES.STATUS_NOT_FOUND);
-            }
-            throw new Error(errorData.err || `Erro na requisição: ${response.status} ${response.statusText}`);
-          default:
-            throw new Error(errorData.err || `Erro na requisição: ${response.status} ${response.statusText}`);
-        }
-      }
-
-      const data = await response.json();
-      console.log(`Resposta de ${url}:`, data);
-      return data;
-    } catch (error) {
-      console.error(`Erro na requisição para ${url}:`, error);
       
-      if (error instanceof Error) {
-        // Se já é um erro tratado, apenas propagar
+      // Verificar se a resposta é ok (2xx)
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Erro ao ler resposta');
+        console.error(`[ClickUp API] Erro HTTP ${response.status} ${response.statusText}: ${errorText}`);
+        
+        // Tentar analisar o erro se for JSON
+        let errorJson;
+        try {
+          errorJson = JSON.parse(errorText);
+        } catch (e) {
+          // Ignorar erro de parse
+        }
+        
+        const error = new Error(
+          errorJson?.err || errorJson?.error?.message || 
+          `Erro HTTP ${response.status} ${response.statusText}`
+        );
+        
+        // Adicionar contexto ao erro
+        (error as any).status = response.status;
+        (error as any).statusText = response.statusText;
+        (error as any).endpoint = endpoint;
+        (error as any).responseBody = errorText;
+        
         throw error;
       }
       
-      throw new Error(ERROR_MESSAGES.DEFAULT_ERROR);
+      // Obter resultado como JSON
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      if (error instanceof Error) {
+        console.error(`[ClickUp API] Erro de requisição para ${endpoint}:`, {
+          message: error.message,
+          name: error.name,
+          endpoint,
+          method: options.method || 'GET'
+        });
+      } else {
+        console.error(`[ClickUp API] Erro desconhecido na requisição para ${endpoint}:`, error);
+      }
+      throw error;
     }
   }
 
@@ -198,22 +201,50 @@ export class ClickUpAPI {
    */
   async createTaskComment(taskId: string, comment: string, notifyAll: boolean = false): Promise<any> {
     if (!taskId) {
+      console.error('[ClickUp API] Erro: ID da tarefa é obrigatório');
       throw new Error('ID da tarefa é obrigatório');
     }
     
     if (!comment || !comment.trim()) {
+      console.error('[ClickUp API] Erro: Comentário vazio');
       throw new Error('Comentário vazio');
     }
     
-    console.log(`Adicionando comentário à tarefa ${taskId}`);
+    console.log(`[ClickUp API] Adicionando comentário à tarefa ${taskId}: "${comment.substring(0, 50)}${comment.length > 50 ? '...' : ''}"`);
     
-    return this.request(`/task/${taskId}/comment`, {
-      method: 'POST',
-      body: JSON.stringify({
-        comment_text: comment,
-        notify_all: notifyAll
-      })
-    });
+    try {
+      const result = await this.request<{id?: string}>(`/task/${taskId}/comment`, {
+        method: 'POST',
+        body: JSON.stringify({
+          comment_text: comment,
+          notify_all: notifyAll
+        })
+      });
+      
+      console.log(`[ClickUp API] Comentário adicionado com sucesso à tarefa ${taskId}, ID do comentário: ${result?.id || 'N/A'}`);
+      return result;
+    } catch (error) {
+      console.error(`[ClickUp API] Erro ao adicionar comentário à tarefa ${taskId}:`, error);
+      
+      // Verificar erros específicos para dar mensagens mais úteis
+      if (error instanceof Error) {
+        const errorMessage = error.message.toLowerCase();
+        
+        if (errorMessage.includes('task not found') || errorMessage.includes('404')) {
+          throw new Error(`Tarefa ${taskId} não encontrada no ClickUp`);
+        }
+        
+        if (errorMessage.includes('unauthorized') || errorMessage.includes('401')) {
+          throw new Error('Acesso não autorizado ao ClickUp. Verifique sua API key e permissões.');
+        }
+        
+        if (errorMessage.includes('rate limit') || errorMessage.includes('429')) {
+          throw new Error('Limite de requisições do ClickUp atingido. Tente novamente mais tarde.');
+        }
+      }
+      
+      throw error;
+    }
   }
   
   /**

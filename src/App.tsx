@@ -43,7 +43,8 @@ function MainContent() {
     fetchUsers,
     createUser,
     deleteUser,
-    toggleUserStatus
+    toggleUserStatus,
+    updateUser
   } = useUserStore();
 
   const [isCreating, setIsCreating] = useState(false);
@@ -225,9 +226,11 @@ if (loading && !toast.isActive(TOAST_ID)) {
             <Notifications
               notifications={notifications}
               onMarkAsRead={markAsRead}
-              onMarkAllAsRead={() => markAllAsRead(user.uid)}
+              onMarkAllAsRead={() => markAllAsRead()}
               onDeleteNotification={deleteNotification}
-              onClearAll={() => clearAll(user.uid)}
+              onClearAll={() => clearAll()}
+              loading={loading}
+              error={error}
             />
             {!showWebhookConfig && !showDashboard && !showUserManagement && (
               <button
@@ -253,6 +256,7 @@ if (loading && !toast.isActive(TOAST_ID)) {
               onCreateUser={createUser}
               onDeleteUser={deleteUser}
               onToggleUserStatus={toggleUserStatus}
+              onUpdateUser={updateUser}
             />
           ) : (
             <>

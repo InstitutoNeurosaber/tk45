@@ -87,6 +87,12 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
   };
 
   const handleStatusChange = async (newStatus: TicketStatus) => {
+    // Apenas administradores podem alterar o status
+    if (userData?.role !== 'admin') {
+      setError('Apenas administradores podem alterar o status do ticket.');
+      return;
+    }
+    
     try {
       setLoading(true);
       setError(null);
@@ -156,50 +162,54 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
       setLoading(true);
       setError(null);
 
-      const currentDeadline = new Date(ticket.deadline);
+      // Garantir que deadline é um objeto Date
+      const currentDeadline = ticket.deadline instanceof Date ? 
+        ticket.deadline : new Date(ticket.deadline);
+      
+      // Calcular novo prazo
       const newDeadline = new Date(currentDeadline.getTime() + (extensionHours * 60 * 60 * 1000));
 
+      // Preparar entrada para o histórico
+      const historyEntry = {
+        oldDeadline: currentDeadline,
+        newDeadline,
+        reason: extensionReason,
+        extendedBy: userData?.name || 'Sistema',
+        extendedAt: new Date()
+      };
+
+      // Atualizar no banco de dados
       await updateTicket(ticket.id, {
         deadline: newDeadline,
-        deadlineHistory: [
-          ...(ticket.deadlineHistory || []),
-          {
-            oldDeadline: currentDeadline,
-            newDeadline,
-            reason: extensionReason,
-            extendedBy: userData?.name || 'Sistema',
-            extendedAt: new Date()
-          }
-        ]
+        deadlineHistory: [...(ticket.deadlineHistory || []), historyEntry]
       });
 
+      // Atualizar o estado local
       onUpdate({
         ...ticket,
         deadline: newDeadline,
-        deadlineHistory: [
-          ...(ticket.deadlineHistory || []),
-          {
-            oldDeadline: currentDeadline,
-            newDeadline,
-            reason: extensionReason,
-            extendedBy: userData?.name || 'Sistema',
-            extendedAt: new Date()
-          }
-        ]
+        deadlineHistory: [...(ticket.deadlineHistory || []), historyEntry]
       });
 
+      // Limpar o modal
       setShowDeadlineModal(false);
       setExtensionHours(24);
       setExtensionReason('');
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Erro ao estender prazo');
+      console.error("[TicketDetailsModal] Erro ao estender prazo:", error);
     } finally {
       setLoading(false);
     }
   };
 
-  const formatDeadline = (date: Date) => {
-    return new Date(date).toLocaleString('pt-BR', {
+  const formatDeadline = (date: Date | string) => {
+    const dateObj = date instanceof Date ? date : new Date(date);
+    if (isNaN(dateObj.getTime())) {
+      console.error("[TicketDetailsModal] Data inválida:", date);
+      return "Data inválida";
+    }
+    return dateObj.toLocaleString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -208,8 +218,10 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
     });
   };
 
-  const isOverdue = (deadline: Date) => {
-    return new Date() > new Date(deadline);
+  const isOverdue = (deadline: Date | string) => {
+    const now = new Date();
+    const deadlineDate = deadline instanceof Date ? deadline : new Date(deadline);
+    return now > deadlineDate;
   };
 
   const handleSyncWithClickUp = async () => {
@@ -549,18 +561,31 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                 <div className="bg-white rounded-lg border border-gray-200 p-6">
                   <h3 className="text-lg font-medium text-gray-900 mb-4">Status</h3>
                   <div className="relative text-gray-600 mb-2">
-                    <select
-                      id="ticketStatus"
-                      value={currentStatus}
-                      onChange={(e) => setCurrentStatus(e.target.value as TicketStatus)}
-                      disabled={loading}
-                      className="block appearance-none w-full bg-white border border-gray-300 hover:border-gray-400 px-4 py-2 pr-8 rounded shadow leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Status do ticket"
-                    >
-                      {Object.entries(statusLabels).map(([value, label]) => (
-                        <option key={value} value={value}>{label}</option>
-                      ))}
-                    </select>
+                    {userData?.role === 'admin' ? (
+                      <select
+                        id="ticketStatus"
+                        value={currentStatus}
+                        onChange={(e) => setCurrentStatus(e.target.value as TicketStatus)}
+                        disabled={loading}
+                        className="block appearance-none w-full bg-white border border-gray-300 hover:border-gray-400 px-4 py-2 pr-8 rounded shadow leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Status do ticket"
+                      >
+                        {Object.entries(statusLabels).map(([value, label]) => (
+                          <option key={value} value={value}>{label}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="px-4 py-2 border border-gray-200 rounded bg-gray-50">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          ticket.status === 'open' ? 'bg-red-100 text-red-800' :
+                          ticket.status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                          ticket.status === 'resolved' ? 'bg-blue-100 text-blue-800' :
+                          'bg-green-100 text-green-800'
+                        }`}>
+                          {statusLabels[ticket.status]}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -670,7 +695,9 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                     Novo Prazo
                   </label>
                   <p className="text-sm text-gray-600">
-                    {formatDeadline(new Date(ticket.deadline.getTime() + (extensionHours * 60 * 60 * 1000)))}
+                    {formatDeadline(new Date((ticket.deadline instanceof Date ? 
+                      ticket.deadline.getTime() : 
+                      new Date(ticket.deadline).getTime()) + (extensionHours * 60 * 60 * 1000)))}
                   </p>
                 </div>
               </div>

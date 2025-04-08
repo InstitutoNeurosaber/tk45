@@ -378,24 +378,36 @@ export class ClickUpService {
     try {
       const api = await this.getAPI();
       
-      // Verificar se a tarefa existe
-      if (!await api.taskExists(taskId)) {
-        console.error(`[ClickUpService] Tarefa ${taskId} não encontrada`);
-        return false;
-      }
+      // Remover a verificação de existência da tarefa que pode falhar com usuários comuns
+      // Vamos tentar adicionar o comentário diretamente
       
       // Adicionar prefixo com nome do autor no comentário, se fornecido
       const commentText = authorName 
         ? `**${authorName}:** ${comment}`
         : comment;
       
+      console.log(`[ClickUpService] Adicionando comentário à tarefa ${taskId}: "${commentText.substring(0, 50)}${commentText.length > 50 ? '...' : ''}"`);
+      
       await api.createTaskComment(taskId, commentText);
       
       // Reset contador de erros após sucesso
       this._consecutiveErrors = 0;
+      console.log(`[ClickUpService] Comentário adicionado com sucesso à tarefa ${taskId}`);
       return true;
     } catch (error) {
+      this._consecutiveErrors++;
+      this._lastErrorTimestamp = Date.now();
+      
       console.error('[ClickUpService] Erro ao adicionar comentário:', error);
+      
+      // Verificar se há erro de autenticação
+      if (error instanceof Error) {
+        const errorMessage = error.message.toLowerCase();
+        if (errorMessage.includes('unauthorized') || errorMessage.includes('401')) {
+          console.error('[ClickUpService] Erro de autenticação ao adicionar comentário. Verifique sua API key.');
+        }
+      }
+      
       return false;
     }
   }

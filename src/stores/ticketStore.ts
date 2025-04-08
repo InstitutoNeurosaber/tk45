@@ -5,6 +5,7 @@ import { ClickUpAPI } from '../lib/clickup/api';
 import { db } from '../lib/firebase';
 import { ticketService } from '../services/ticketService';
 import type { Ticket, TicketStatus } from '../types/ticket';
+import { useAuthStore } from '../stores/authStore';
 
 interface TicketState {
   tickets: Ticket[];
@@ -103,6 +104,14 @@ export const useTicketStore = create<TicketState>((set, get) => ({
     const previousTickets = get().tickets;
     const now = new Date();
     const currentTicket = get().tickets.find(t => t.id === ticketId);
+    
+    // Obter o estado do usuário atual (necessário importar useAuthStore no topo do arquivo)
+    const { userData } = useAuthStore.getState();
+    
+    // Verificar se o usuário é administrador
+    if (userData?.role !== 'admin') {
+      throw new Error('Apenas administradores podem alterar o status dos tickets');
+    }
     
     if (!currentTicket) {
       throw new Error('Ticket não encontrado');

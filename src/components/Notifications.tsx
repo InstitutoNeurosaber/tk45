@@ -8,6 +8,8 @@ interface NotificationsProps {
   onMarkAllAsRead: () => void;
   onDeleteNotification: (notificationId: string) => void;
   onClearAll: () => void;
+  loading?: boolean;
+  error?: string | null;
 }
 
 export function Notifications({ 
@@ -15,7 +17,9 @@ export function Notifications({
   onMarkAsRead, 
   onMarkAllAsRead, 
   onDeleteNotification,
-  onClearAll 
+  onClearAll,
+  loading = false,
+  error = null
 }: NotificationsProps) {
   const [isOpen, setIsOpen] = useState(false);
   const notificationRef = useRef<HTMLDivElement>(null);
@@ -35,7 +39,11 @@ export function Notifications({
 
   // Agrupa notificações por data
   const groupedNotifications = notifications.reduce((groups, notification) => {
-    const date = new Date(notification.createdAt).toLocaleDateString('pt-BR');
+    const date = new Date(notification.createdAt).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
     if (!groups[date]) {
       groups[date] = [];
     }
@@ -47,6 +55,7 @@ export function Notifications({
   const getNotificationIcon = (message: string) => {
     if (message.includes('status')) return <Clock className="h-5 w-5 text-purple-500" />;
     if (message.includes('comentário')) return <MessageSquare className="h-5 w-5 text-blue-500" />;
+    if (message.includes('ticket')) return <AlertCircle className="h-5 w-5 text-orange-500" />;
     return <AlertCircle className="h-5 w-5 text-yellow-500" />;
   };
 
@@ -54,13 +63,22 @@ export function Notifications({
   const getRelativeTime = (date: Date) => {
     const now = new Date();
     const diff = now.getTime() - new Date(date).getTime();
+    
     const minutes = Math.floor(diff / 60000);
     const hours = Math.floor(minutes / 60);
     const days = Math.floor(hours / 24);
-
-    if (days > 0) return `${days}d atrás`;
-    if (hours > 0) return `${hours}h atrás`;
-    if (minutes > 0) return `${minutes}m atrás`;
+    
+    const rtf = new Intl.RelativeTimeFormat('pt-BR', { numeric: 'auto' });
+    
+    if (days > 0) {
+      return days === 1 ? rtf.format(-1, 'day') : `${days}d atrás`;
+    }
+    if (hours > 0) {
+      return hours === 1 ? rtf.format(-1, 'hour') : `${hours}h atrás`;
+    }
+    if (minutes > 0) {
+      return minutes === 1 ? rtf.format(-1, 'minute') : `${minutes}m atrás`;
+    }
     return 'Agora';
   };
 
@@ -69,6 +87,7 @@ export function Notifications({
       <button 
         onClick={() => setIsOpen(!isOpen)}
         className="relative p-2 text-gray-600 hover:text-gray-900 transition-colors duration-200"
+        aria-label={`Notificações (${unreadCount} não lidas)`}
       >
         <Bell className="h-6 w-6" />
         {unreadCount > 0 && (
@@ -86,19 +105,26 @@ export function Notifications({
               <div className="flex space-x-2">
                 <button
                   onClick={onMarkAllAsRead}
-                  className="text-sm text-blue-600 hover:text-blue-800 transition-colors duration-200"
+                  disabled={loading || unreadCount === 0}
+                  className={`text-sm text-blue-600 hover:text-blue-800 transition-colors duration-200 ${
+                    (loading || unreadCount === 0) ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
                 >
                   Marcar todas como lidas
                 </button>
                 <button
                   onClick={onClearAll}
-                  className="text-sm text-red-600 hover:text-red-800 transition-colors duration-200"
+                  disabled={loading || notifications.length === 0}
+                  className={`text-sm text-red-600 hover:text-red-800 transition-colors duration-200 ${
+                    (loading || notifications.length === 0) ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
                 >
                   Limpar todas
                 </button>
                 <button
                   onClick={() => setIsOpen(false)}
                   className="text-gray-400 hover:text-gray-600"
+                  title="Fechar notificações"
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -106,8 +132,22 @@ export function Notifications({
             </div>
           </div>
 
+          {error && (
+            <div className="p-3 bg-red-50 text-red-700 text-sm border-b border-red-100">
+              <p className="flex items-center">
+                <AlertCircle className="h-4 w-4 mr-2" />
+                {error}
+              </p>
+            </div>
+          )}
+
           <div className="max-h-[480px] overflow-y-auto">
-            {Object.entries(groupedNotifications).length > 0 ? (
+            {loading ? (
+              <div className="p-8 text-center">
+                <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                <p className="text-gray-600">Carregando notificações...</p>
+              </div>
+            ) : Object.entries(groupedNotifications).length > 0 ? (
               Object.entries(groupedNotifications).map(([date, notifications]) => (
                 <div key={date} className="border-b border-gray-100 last:border-0">
                   <div className="px-4 py-2 bg-gray-50">
@@ -136,6 +176,7 @@ export function Notifications({
                               onClick={() => onMarkAsRead(notification.id)}
                               className="text-blue-600 hover:text-blue-800"
                               title="Marcar como lida"
+                              disabled={loading}
                             >
                               <Check className="h-4 w-4" />
                             </button>
@@ -144,6 +185,7 @@ export function Notifications({
                             onClick={() => onDeleteNotification(notification.id)}
                             className="text-gray-400 hover:text-red-600"
                             title="Excluir notificação"
+                            disabled={loading}
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>

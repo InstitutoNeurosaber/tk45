@@ -13,13 +13,15 @@ import {
   DocumentData,
   QueryDocumentSnapshot,
   QuerySnapshot,
-  serverTimestamp
+  serverTimestamp,
+  where
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../lib/firebase';
 import { useAuthStore } from '../stores/authStore';
 import { v4 as uuidv4 } from 'uuid';
 import { clickupService } from '../services/clickupService';
+import { notificationService } from '../services/notificationService';
 import { getAuth } from 'firebase/auth';
 
 // Interfaces para usar no hook
@@ -72,24 +74,31 @@ export function useComments(ticketId: string) {
 
     const unsubscribe = onSnapshot(
       commentsQuery,
-      (snapshot: any) => {
-        const commentsList = snapshot.docs.map((doc: any) => {
-          const data = doc.data();
-          return {
-            id: doc.id,
-            content: data.content,
-            userId: data.userId,
-            userName: data.userName,
-            userPhotoURL: data.userPhotoURL,
-            createdAt: data.createdAt.toDate(),
-            attachments: data.attachments || []
-          };
-        });
-
-        setComments(commentsList);
-        setLoading(false);
+      (snapshot) => {
+        try {
+          const commentsList = snapshot.docs.map((doc) => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              content: data.content,
+              userId: data.userId,
+              userName: data.userName,
+              userPhotoURL: data.userPhotoURL,
+              createdAt: data.createdAt.toDate(),
+              attachments: data.attachments || []
+            };
+          });
+          
+          setComments(commentsList);
+          setLoading(false);
+        } catch (err) {
+          console.error('Erro ao processar comentários:', err);
+          const errorMessage = err instanceof Error ? err.message : 'Erro ao processar comentários';
+          setError(errorMessage);
+          setLoading(false);
+        }
       },
-      (err: Error) => {
+      (err) => {
         console.error('Erro ao carregar comentários:', err);
         
         const firebaseErr = err as Error;
@@ -111,6 +120,36 @@ export function useComments(ticketId: string) {
 
     // Limpar o listener ao desmontar
     return () => unsubscribe();
+  }, [ticketId, user]);
+
+  // Enviar notificação para o autor do ticket e responsável
+  const sendNotificationForComment = useCallback(async (ticketData: any, commentAuthorName: string) => {
+    try {
+      if (!user) return;
+      
+      // Se existe um autor do ticket e não é o autor do comentário, notificar
+      if (ticketData.userId && ticketData.userId !== user.uid) {
+        await notificationService.createNotification({
+          ticketId,
+          userId: ticketData.userId,
+          message: `Novo comentário de ${commentAuthorName} no ticket: ${ticketData.title}`
+        });
+      }
+      
+      // Se existe um responsável e não é o autor do comentário, notificar
+      if (ticketData.assignedToId && 
+          ticketData.assignedToId !== user.uid && 
+          ticketData.assignedToId !== ticketData.userId) {
+        await notificationService.createNotification({
+          ticketId,
+          userId: ticketData.assignedToId,
+          message: `Novo comentário de ${commentAuthorName} no ticket: ${ticketData.title}`
+        });
+      }
+    } catch (err) {
+      console.warn('Erro ao enviar notificações sobre o comentário:', err);
+      // Não falhar completamente se as notificações não forem enviadas
+    }
   }, [ticketId, user]);
 
   // Adicionar um novo comentário
@@ -150,17 +189,40 @@ export function useComments(ticketId: string) {
           const ticketData = ticketDoc.data();
           const currentCount = ticketData.commentCount || 0;
           
+          // Enviar notificações para o autor do ticket e responsável
+          await sendNotificationForComment(
+            ticketData, 
+            user.displayName || 'Usuário'
+          );
+          
           // Sincronizar o comentário com o ClickUp, se houver taskId
           if (ticketData.taskId) {
             try {
-              await clickupService.addCommentToTask(
+              console.log(`Tentando enviar comentário para o ClickUp (taskId: ${ticketData.taskId}) por ${user.email} (${user.uid})`);
+              const success = await clickupService.addCommentToTask(
                 ticketData.taskId,
                 content.trim(),
                 user.displayName || 'Usuário'
               );
-              console.log(`Comentário sincronizado com ClickUp na tarefa ${ticketData.taskId}`);
+              
+              if (success) {
+                console.log(`Comentário sincronizado com sucesso no ClickUp na tarefa ${ticketData.taskId}`);
+              } else {
+                console.warn(`Falha ao sincronizar comentário com ClickUp na tarefa ${ticketData.taskId}, mas sem erro específico`);
+              }
             } catch (clickupError) {
-              console.warn('Não foi possível sincronizar o comentário com o ClickUp:', clickupError);
+              console.error('Detalhes do erro ao sincronizar comentário com ClickUp:', 
+                clickupError instanceof Error ? {
+                  message: clickupError.message,
+                  name: clickupError.name,
+                  stack: clickupError.stack
+                } : clickupError
+              );
+              
+              // Registrar informações para diagnóstico
+              console.warn(`Usuário: ${user.email} (${user.uid}), Tipo: ${user.emailVerified ? 'verificado' : 'não verificado'}`);
+              console.warn(`Ticket ID: ${ticketId}, Task ID: ${ticketData.taskId}`);
+              
               // Não tratar como erro crítico para não bloquear a adição do comentário no sistema
             }
           }
@@ -176,10 +238,11 @@ export function useComments(ticketId: string) {
       }
 
       setSubmitting(false);
-    } catch (err: any) {
+    } catch (err) {
       console.error('Erro ao adicionar comentário:', err);
       
-      if (err?.code === 'permission-denied') {
+      const error = err as Error;
+      if (error?.['code'] === 'permission-denied') {
         setError('Permissão negada. Verifique se você está autenticado e tem acesso a este ticket.');
       } else {
         setError('Falha ao adicionar o comentário. Por favor, tente novamente.');
@@ -187,7 +250,7 @@ export function useComments(ticketId: string) {
       
       setSubmitting(false);
     }
-  }, [ticketId, user]);
+  }, [ticketId, user, sendNotificationForComment]);
 
   // Fazer upload de imagem e adicionar como comentário
   const addImageComment = useCallback(async (file: File) => {
@@ -248,17 +311,31 @@ export function useComments(ticketId: string) {
           const ticketData = ticketDoc.data();
           const currentCount = ticketData.commentCount || 0;
           
+          // Enviar notificações para o autor do ticket e responsável
+          await sendNotificationForComment(
+            ticketData, 
+            user.displayName || 'Usuário'
+          );
+          
           // Sincronizar o comentário com o ClickUp, se houver taskId
           if (ticketData.taskId) {
             try {
               const commentText = `**${user.displayName || 'Usuário'} enviou uma imagem:** ${file.name}\n${downloadUrl}`;
-              await clickupService.addCommentToTask(
+              console.log(`Tentando enviar comentário com imagem para o ClickUp (taskId: ${ticketData.taskId}) por ${user.email} (${user.uid})`);
+              
+              const success = await clickupService.addCommentToTask(
                 ticketData.taskId,
-                commentText
+                commentText,
+                user.displayName || 'Usuário'
               );
-              console.log(`Comentário com imagem sincronizado com ClickUp na tarefa ${ticketData.taskId}`);
+              
+              if (success) {
+                console.log(`Comentário com imagem sincronizado com sucesso no ClickUp na tarefa ${ticketData.taskId}`);
+              } else {
+                console.warn(`Falha ao sincronizar comentário com imagem para o ClickUp na tarefa ${ticketData.taskId}, mas sem erro específico`);
+              }
             } catch (clickupError) {
-              console.warn('Não foi possível sincronizar o comentário com imagem para o ClickUp:', clickupError);
+              console.error('Erro ao sincronizar comentário com imagem para o ClickUp:', clickupError);
               // Não tratar como erro crítico para não bloquear a adição do comentário no sistema
             }
           }
@@ -269,25 +346,17 @@ export function useComments(ticketId: string) {
           });
         }
       } catch (updateError) {
-        console.warn('Não foi possível atualizar o contador de comentários, mas a imagem foi adicionada:', updateError);
+        console.warn('Não foi possível atualizar o contador de comentários, mas o comentário com imagem foi adicionado:', updateError);
         // Não tratar como erro crítico
       }
 
       setSubmitting(false);
-    } catch (err: any) {
-      console.error('Erro ao adicionar imagem:', err);
-      
-      if (err?.code === 'permission-denied') {
-        setError('Permissão negada. Verifique se você está autenticado e tem acesso a este ticket.');
-      } else if (err?.code && err.code.includes('storage')) {
-        setError('Falha ao fazer upload da imagem. Verifique se você tem permissão para enviar arquivos.');
-      } else {
-        setError(err instanceof Error ? err.message : 'Falha ao adicionar a imagem');
-      }
-      
+    } catch (err) {
+      console.error('Erro ao adicionar comentário com imagem:', err);
+      setError(err instanceof Error ? err.message : 'Falha ao adicionar a imagem. Por favor, tente novamente.');
       setSubmitting(false);
     }
-  }, [ticketId, user]);
+  }, [ticketId, user, sendNotificationForComment]);
 
   // Remover um comentário
   const deleteComment = useCallback(async (commentId: string) => {
@@ -391,4 +460,4 @@ export function useComments(ticketId: string) {
     addImageComment,
     deleteComment
   };
-} 
+}

@@ -9,7 +9,7 @@ import {
   getDocs,
   getDoc,
   Timestamp,
-  QueryDocumentSnapshot,
+  QueryDocumentSnapshot as FirestoreQueryDocumentSnapshot,
   orderBy
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -17,7 +17,7 @@ import { webhookService } from './webhookService';
 import type { Ticket, TicketStatus } from '../types/ticket';
 import { priorityDeadlines } from '../types/ticket';
 
-function convertToTicket(doc: QueryDocumentSnapshot<any>): Ticket {
+function convertToTicket(doc: any): Ticket {
   const data = doc.data();
   return {
     id: doc.id,
@@ -39,7 +39,7 @@ export const ticketService = {
       const ticketsRef = collection(db, 'tickets');
       const q = query(ticketsRef, where('title', '>=', title), where('title', '<=', title + '\uf8ff'));
       const snapshot = await getDocs(q);
-      return snapshot.docs.map((doc: QueryDocumentSnapshot<any>) => convertToTicket(doc));
+      return snapshot.docs.map((doc: any) => convertToTicket(doc));
     } catch (error) {
       console.error('Erro ao buscar tickets por título:', error);
       throw error;
@@ -159,14 +159,30 @@ export const ticketService = {
         throw new Error('Ticket não encontrado');
       }
 
-      const currentTicket = convertToTicket(ticketDoc as QueryDocumentSnapshot<any>);
+      const currentTicket = convertToTicket(ticketDoc as any);
       const now = Timestamp.now();
       
-      const updates = {
+      // Criar uma cópia das alterações para processar
+      const updates: any = {
         ...changes,
         updatedAt: now
       };
 
+      // Converter deadline para Timestamp se fornecido nas alterações
+      if (changes.deadline) {
+        const deadlineDate = changes.deadline instanceof Date 
+          ? changes.deadline 
+          : new Date(changes.deadline);
+        
+        if (!isNaN(deadlineDate.getTime())) {
+          updates.deadline = Timestamp.fromDate(deadlineDate);
+        } else {
+          console.error('Data de prazo inválida:', changes.deadline);
+          delete updates.deadline; // Remover se inválida
+        }
+      }
+
+      // Atualizar deadline baseado na prioridade, se alterada
       if (changes.priority && changes.priority !== currentTicket.priority) {
         updates.priorityLockedBy = changes.priorityLockedBy;
         updates.priorityLockedAt = now;
@@ -176,14 +192,24 @@ export const ticketService = {
         updates.deadline = Timestamp.fromDate(newDeadline);
       }
       
+      // Atualizar no Firestore
       await updateDoc(ticketRef, updates);
 
+      // Preparar o objeto de retorno
       const updatedTicket = {
         ...currentTicket,
-        ...updates,
-        updatedAt: now.toDate(),
-        deadline: updates.deadline?.toDate() || currentTicket.deadline
+        ...changes, // Manter as alterações originais para manter o tipo
+        updatedAt: now.toDate()
       };
+
+      // Garantir que a deadline seja um objeto Date
+      if (updates.deadline && typeof updates.deadline.toDate === 'function') {
+        updatedTicket.deadline = updates.deadline.toDate();
+      } else if (changes.deadline instanceof Date) {
+        updatedTicket.deadline = changes.deadline;
+      } else if (typeof changes.deadline === 'string') {
+        updatedTicket.deadline = new Date(changes.deadline);
+      }
 
       try {
         const webhookResponse = await webhookService.sendWebhookNotification('ticket.updated', updatedTicket);
@@ -224,7 +250,7 @@ export const ticketService = {
       try {
         await webhookService.sendWebhookNotification('ticket.deleted', {
           ticketId,
-          ticket: convertToTicket(ticketDoc as QueryDocumentSnapshot<any>)
+          ticket: convertToTicket(ticketDoc as any)
         });
       } catch (error) {
         console.error('Erro ao enviar webhook de exclusão de ticket:', error);

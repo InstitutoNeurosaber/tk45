@@ -6,8 +6,10 @@ import {
   Trash2,
   X,
   AlertTriangle,
-  Loader
+  Loader,
+  CheckCircle
 } from 'lucide-react';
+import { toast } from 'react-toastify';
 import { useComments } from '../hooks/useComments';
 import { useAuthStore } from '../stores/authStore';
 import type { Ticket } from '../types/ticket';
@@ -37,8 +39,18 @@ export function Comments({ ticket }: CommentsProps) {
 
   // Rolar para o último comentário quando novos comentários são carregados
   useEffect(() => {
-    if (commentsContainerRef.current) {
-      commentsContainerRef.current.scrollTop = commentsContainerRef.current.scrollHeight;
+    if (commentsContainerRef.current && comments.length > 0) {
+      // Só rola automaticamente se estiver próximo ao final, para não atrapalhar a leitura
+      const container = commentsContainerRef.current;
+      const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 300;
+      
+      if (isNearBottom) {
+        setTimeout(() => {
+          if (commentsContainerRef.current) {
+            commentsContainerRef.current.scrollTop = commentsContainerRef.current.scrollHeight;
+          }
+        }, 100);
+      }
     }
   }, [comments]);
 
@@ -51,8 +63,20 @@ export function Comments({ ticket }: CommentsProps) {
     try {
       await addComment(newComment.trim());
       setNewComment('');
+      toast.success('Comentário enviado com sucesso!', {
+        position: 'bottom-right',
+        autoClose: 3000,
+        hideProgressBar: true,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true
+      });
     } catch (error) {
       console.error('Erro ao enviar comentário:', error);
+      toast.error('Erro ao enviar comentário. Tente novamente.', {
+        position: 'bottom-right',
+        autoClose: 5000
+      });
     }
   };
 
@@ -133,8 +157,17 @@ export function Comments({ ticket }: CommentsProps) {
       try {
         await deleteComment(commentId);
         setConfirmDelete(null);
+        toast.success('Comentário excluído com sucesso!', {
+          position: 'bottom-right',
+          autoClose: 3000,
+          hideProgressBar: true
+        });
       } catch (error) {
         console.error('Erro ao excluir comentário:', error);
+        toast.error('Erro ao excluir comentário. Tente novamente.', {
+          position: 'bottom-right',
+          autoClose: 5000
+        });
       }
     } else {
       setConfirmDelete(commentId);
