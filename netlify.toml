@@ -1,5 +1,5 @@
 [build]
-  command = "find netlify/functions -name \"*.ts\" -type f -delete && npm run build"
+  command = "npm run netlify:build"
   publish = "dist"
   functions = "netlify/functions"
 

@@ -3,13 +3,8 @@
  * Executado antes do build para evitar problemas com arquivos corrompidos
  */
 
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-// Obter diretório atual
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const fs = require('fs');
+const path = require('path');
 
 // Caminho para o diretório de funções do Netlify
 const functionsDir = path.join(__dirname, '..', 'netlify', 'functions');

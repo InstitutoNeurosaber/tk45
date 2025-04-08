@@ -12,7 +12,7 @@
     "test": "vitest",
     "test:coverage": "vitest run --coverage",
     "postinstall": "cd netlify/functions && npm install",
-    "netlify:build": "npm run build && cd netlify/functions && npm install"
+    "netlify:build": "rm -f netlify/functions/*.ts && npm run build && cd netlify/functions && npm install"
   },
   "dependencies": {
     "@chatscope/chat-ui-kit-react": "^2.0.3",
