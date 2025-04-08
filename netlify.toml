@@ -1,46 +1,16 @@
 [build]
-  command = "npm run build"
-  publish = "build"
+  command = "npm run netlify:build"
+  publish = "dist"
   functions = "netlify/functions"
 
 [build.environment]
   NODE_VERSION = "18"
 
-[build.processing]
-  skip_processing = true
-
-[build.processing.css]
-  bundle = true
-  minify = true
-
-[build.processing.js]
-  bundle = true
-  minify = true
-
-[build.processing.html]
-  pretty_urls = true
-
-[build.processing.images]
-  compress = true
-
 [functions]
   node_bundler = "esbuild"
-  external_node_modules = ["@nestjs/microservices", "@grpc/grpc-js", "@grpc/proto-loader", "cache-manager", "firebase", "firebase-admin"]
-  included_files = ["dist/apps/api/**/*.graphql", "netlify/functions/*.js", "netlify/functions/package.json", "netlify/functions/package-lock.json"]
+  external_node_modules = ["firebase", "firebase-admin"]
+  included_files = ["netlify/functions/*.js", "netlify/functions/package.json", "netlify/functions/package-lock.json"]
   excluded_files = ["netlify/functions/*.ts", "netlify/functions/**/*.ts"]
-  
-# Configuração específica para funções individuais
-[functions.clickup-proxy]
-  included_files = ["netlify/functions/clickup-proxy.js"]
-  excluded_files = ["netlify/functions/clickup-proxy.ts"]
-
-[functions.get-clickup-config]
-  included_files = ["netlify/functions/get-clickup-config.js"]
-  excluded_files = ["netlify/functions/get-clickup-config.ts"]
-
-[functions.delete-webhook]
-  included_files = ["netlify/functions/delete-webhook.js"]
-  excluded_files = ["netlify/functions/delete-webhook.ts"]
   
 [[redirects]]
   from = "/*"
