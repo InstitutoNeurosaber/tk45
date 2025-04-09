@@ -14,7 +14,10 @@ import {
   QueryDocumentSnapshot,
   QuerySnapshot,
   serverTimestamp,
-  where
+  where,
+  limit,
+  startAfter,
+  getDocs
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { db, storage } from '../lib/firebase';
@@ -51,8 +54,11 @@ export function useComments(ticketId: string) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(true);
+  const [lastComment, setLastComment] = useState<QueryDocumentSnapshot | null>(null);
+  const COMMENTS_PER_PAGE = 20;
 
-  // Carregar comentários em tempo real
+  // Carregar comentários iniciais
   useEffect(() => {
     if (!ticketId) {
       setLoading(false);
@@ -68,9 +74,16 @@ export function useComments(ticketId: string) {
 
     setLoading(true);
     setError(null);
+    setComments([]);
+    setLastComment(null);
+    setHasMore(true);
 
     const commentsRef = collection(db, 'tickets', ticketId, 'comments');
-    const commentsQuery = query(commentsRef, orderBy('createdAt', 'asc'));
+    const commentsQuery = query(
+      commentsRef, 
+      orderBy('createdAt', 'asc'),
+      limit(COMMENTS_PER_PAGE)
+    );
 
     const unsubscribe = onSnapshot(
       commentsQuery,
@@ -89,7 +102,11 @@ export function useComments(ticketId: string) {
             };
           });
           
-          setComments(commentsList);
+          const sortedComments = commentsList.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+          
+          setComments(sortedComments);
+          setLastComment(snapshot.docs[snapshot.docs.length - 1] || null);
+          setHasMore(snapshot.docs.length === COMMENTS_PER_PAGE);
           setLoading(false);
         } catch (err) {
           console.error('Erro ao processar comentários:', err);
@@ -100,27 +117,58 @@ export function useComments(ticketId: string) {
       },
       (err) => {
         console.error('Erro ao carregar comentários:', err);
-        
-        const firebaseErr = err as Error;
-        if ('code' in firebaseErr && typeof firebaseErr.code === 'string') {
-          if (firebaseErr.code === 'permission-denied') {
-            setError('Permissão negada. Verifique se você está autenticado e tem acesso a este ticket.');
-          } else if (firebaseErr.code === 'not-found') {
-            setError('Ticket não encontrado ou excluído.');
-          } else {
-            setError('Erro ao carregar comentários: ' + err.message);
-          }
-        } else {
-          setError('Erro ao carregar comentários: ' + err.message);
-        }
-        
+        setError('Erro ao carregar comentários: ' + err.message);
         setLoading(false);
       }
     );
 
-    // Limpar o listener ao desmontar
     return () => unsubscribe();
   }, [ticketId, user]);
+
+  // Carregar mais comentários
+  const loadMoreComments = useCallback(async () => {
+    if (!lastComment || !hasMore || loading) return;
+
+    setLoading(true);
+    try {
+      const commentsRef = collection(db, 'tickets', ticketId, 'comments');
+      const commentsQuery = query(
+        commentsRef,
+        orderBy('createdAt', 'asc'),
+        startAfter(lastComment),
+        limit(COMMENTS_PER_PAGE)
+      );
+
+      const snapshot = await getDocs(commentsQuery);
+      const newComments = snapshot.docs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          content: data.content,
+          userId: data.userId,
+          userName: data.userName,
+          userPhotoURL: data.userPhotoURL,
+          createdAt: data.createdAt.toDate(),
+          attachments: data.attachments || []
+        };
+      });
+
+      const sortedNewComments = newComments.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      
+      setComments(prev => {
+        const allComments = [...prev, ...sortedNewComments];
+        return allComments.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+      });
+      
+      setLastComment(snapshot.docs[snapshot.docs.length - 1] || null);
+      setHasMore(snapshot.docs.length === COMMENTS_PER_PAGE);
+    } catch (err) {
+      console.error('Erro ao carregar mais comentários:', err);
+      setError('Erro ao carregar mais comentários: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [ticketId, lastComment, hasMore, loading]);
 
   // Enviar notificação para o autor do ticket e responsável
   const sendNotificationForComment = useCallback(async (ticketData: any, commentAuthorName: string) => {
@@ -456,6 +504,8 @@ export function useComments(ticketId: string) {
     loading,
     submitting,
     error,
+    hasMore,
+    loadMoreComments,
     addComment,
     addImageComment,
     deleteComment

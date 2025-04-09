@@ -470,3 +470,22 @@
   color: gray;
   font-style: italic;
 }
+
+*,
+::before,
+::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Adicionar estilos específicos para os comentários */
+.comments-container {
+  border-style: none;
+}
+
+.comment-bubble {
+  border-style: solid;
+  border-width: 1px;
+  border-color: transparent;
+}

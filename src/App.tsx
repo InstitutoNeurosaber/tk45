@@ -68,19 +68,36 @@ function MainContent() {
   }, [user, fetchUsers]);
 
   const handleCreateTicket = async (data: Omit<Ticket, 'id' | 'createdAt' | 'updatedAt' | 'deadline' | 'userId' | 'attachments'>) => {
-    await createTicket({
-      ...data,
-      userId: user.uid,
-      attachments: []
-    });
-    
-    await createNotification({
-      ticketId: 'temp',
-      userId: user.uid,
-      message: `Novo ticket criado: ${data.title}`
-    });
-    
-    setIsCreating(false);
+    try {
+      await createTicket({
+        ...data,
+        status: 'open',
+        userId: user.uid,
+        attachments: []
+      });
+      
+      if (userData) {
+        await createNotification({
+          ticketId: 'temp',
+          userId: user.uid,
+          message: `Novo ticket criado: ${data.title}`
+        });
+      }
+      
+      setIsCreating(false);
+      
+      toast.success('Ticket criado com sucesso!', {
+        position: 'bottom-right',
+        autoClose: 3000,
+        hideProgressBar: true
+      });
+    } catch (error) {
+      toast.error('Erro ao criar ticket. Por favor, tente novamente.', {
+        position: 'bottom-right',
+        autoClose: 5000
+      });
+      console.error('Erro ao criar ticket:', error);
+    }
   };
 
   const handleStatusChange = async (ticketId: string, newStatus: TicketStatus) => {

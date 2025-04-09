@@ -558,7 +558,7 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                   Comentários
                 </h3>
                 <div className="max-h-[400px]">
-                  <Comments ticket={ticket} />
+                  <Comments ticket={ticket} showHeader={false} />
                 </div>
               </div>
             </div>
