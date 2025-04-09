@@ -4,9 +4,14 @@
  * Verifica se existem arquivos JavaScript correspondentes
  */
 
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { execSync } from 'child_process';
+
+// Obter o diretório atual (equivalente a __dirname no CommonJS)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Cores para console
 const colors = {
@@ -64,7 +69,7 @@ async function main() {
         
         // Criar um arquivo JavaScript simples como fallback
         const fallbackContent = `// Arquivo JavaScript gerado automaticamente como fallback para ${basename}.ts
-exports.handler = async (event, context) => {
+export const handler = async (event, context) => {
   return {
     statusCode: 200,
     body: JSON.stringify({ 

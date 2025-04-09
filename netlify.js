@@ -3,9 +3,9 @@
  * Este arquivo é usado pelo netlify-cli durante o deploy manual
  */
 
-module.exports = {
-  // Site ID do seu site no Netlify (opcional)
-  // site_id: "seu-site-id-netlify",
+export default {
+  // Site ID do seu site no Netlify
+  site_id: "435f71be-7bc6-483c-abe6-aa8192083f94",
   
   // Configuração de build
   build: {
