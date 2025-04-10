@@ -1,0 +1,8 @@
+{
+  "baseUrl": "http://localhost:3000",
+  "typescript": true,
+  "outDir": "emails/dist",
+  "templates": [
+    "src/features/webhooks/components/EmailTemplates/templates/*.tsx"
+  ]
+} 

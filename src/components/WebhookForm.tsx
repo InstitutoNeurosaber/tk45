@@ -18,7 +18,7 @@ const eventOptions = [
 // Validação mais robusta da URL
 const urlSchema = z.string()
   .min(1, 'URL é obrigatória')
-  .url('URL inválida. Exemplo correto: https://webhook.sistemaneurosaber.com.br/webhook/comentario');
+  .url('URL inválida. Exemplo correto: https://api.neurosaber.com.br/webhook/comentario');
 
 // Adiciona validação para garantir que a URL é acessível
 const webhookSchema = z.object({
@@ -82,16 +82,6 @@ export function WebhookForm({ webhook, onWebhookCreated, onWebhookUpdated, onCan
   // Sugerir correções de URL comum
   useEffect(() => {
     if (!currentUrl || !isDirty) return;
-
-    // Correção para URLs comuns
-    if (currentUrl.includes('sistemaneurousaber') && !currentUrl.includes('sistemaneurosaber')) {
-      const correctedUrl = currentUrl.replace('sistemaneurousaber', 'sistemaneurosaber');
-      setValue('url', correctedUrl, { shouldValidate: true, shouldDirty: true });
-      setTestResult({
-        success: true,
-        message: 'URL corrigida automaticamente: "neurousaber" para "neurosaber"'
-      });
-    }
 
     // Correção de caminhos
     if (currentUrl.includes('/webhooks/') && !currentUrl.includes('/webhook/')) {
@@ -178,11 +168,6 @@ export function WebhookForm({ webhook, onWebhookCreated, onWebhookUpdated, onCan
   // Função para garantir que a URL esteja no formato correto
   const ensureCorrectUrlFormat = (url: string): string => {
     let correctedUrl = url;
-    
-    // Correção de domínio
-    if (url.includes('sistemaneurousaber')) {
-      correctedUrl = correctedUrl.replace('sistemaneurousaber', 'sistemaneurosaber');
-    }
     
     // Correção de caminho
     if (url.includes('/webhooks/')) {

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Webhook, Clock as ClickUp, Code, TestTube, Plus } from 'lucide-react';
+import { Webhook, Clock as ClickUp, Code, TestTube, Plus, Mail } from 'lucide-react';
 import { useWebhookStore } from '../stores/webhookStore';
 import { useAuthStore } from '../stores/authStore';
 import { WebhookFormModal } from './WebhookFormModal';
@@ -9,10 +9,12 @@ import { ClickUpConfig } from './ClickUpConfig';
 import { ApiDocs } from './ApiDocs';
 import { N8nDocs } from './N8nDocs';
 import { SystemTest } from './SystemTest';
+import { EmailTemplatesTab } from '../features/webhooks/components/EmailTemplates/EmailTemplatesTab';
 import type { WebhookConfig as WebhookConfigType } from '../types/webhook';
+import { TabsList, TabsTrigger } from './ui/tabs';
 
 export function WebhookConfig() {
-  const [activeTab, setActiveTab] = React.useState<'webhooks' | 'clickup' | 'api' | 'n8n' | 'test'>('webhooks');
+  const [activeTab, setActiveTab] = React.useState<'webhooks' | 'clickup' | 'api' | 'n8n' | 'test' | 'email'>('webhooks');
   const [editingWebhook, setEditingWebhook] = useState<WebhookConfigType | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const { user } = useAuthStore();
@@ -72,6 +74,17 @@ export function WebhookConfig() {
           >
             <Webhook className="h-5 w-5 mr-2" />
             Webhooks
+          </button>
+          <button
+            onClick={() => setActiveTab('email')}
+            className={`${
+              activeTab === 'email'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm flex items-center`}
+          >
+            <Mail className="h-5 w-5 mr-2" />
+            Templates de Email
           </button>
           <button
             onClick={() => setActiveTab('clickup')}
@@ -145,6 +158,8 @@ export function WebhookConfig() {
             onWebhookUpdated={handleWebhookUpdated}
           />
         </>
+      ) : activeTab === 'email' ? (
+        <EmailTemplatesTab />
       ) : activeTab === 'clickup' ? (
         <ClickUpConfig />
       ) : activeTab === 'api' ? (

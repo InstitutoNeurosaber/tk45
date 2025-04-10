@@ -36,6 +36,13 @@ interface WebhookResponse {
   priority?: string;
 }
 
+interface WebhookPayload {
+  event: WebhookEvent;
+  data: unknown;
+  timestamp: string;
+  targetUrl?: string;
+}
+
 export const webhookService = {
   async getActiveWebhooks(event: WebhookEvent): Promise<WebhookConfig[]> {
     try {
@@ -67,7 +74,7 @@ export const webhookService = {
           return [];
         }
         
-        return alternativeSnapshot.docs.map(doc => ({
+        return alternativeSnapshot.docs.map((doc: any) => ({
           id: doc.id,
           ...doc.data(),
           createdAt: doc.data().createdAt.toDate(),
@@ -75,7 +82,7 @@ export const webhookService = {
         })) as WebhookConfig[];
       }
       
-      return snapshot.docs.map(doc => ({
+      return snapshot.docs.map((doc: any) => ({
         id: doc.id,
         ...doc.data(),
         createdAt: doc.data().createdAt.toDate(),
@@ -113,7 +120,7 @@ export const webhookService = {
           const webhooksRef = collection(db, 'webhooks_config');
           const querySnapshot = await getDocs(webhooksRef);
           console.log(`[WebhookService] Total de configurações de webhook: ${querySnapshot.size}`);
-          querySnapshot.forEach(doc => {
+          querySnapshot.forEach((doc: any) => {
             console.log(`[WebhookService] Webhook config: ${doc.id}`, doc.data());
           });
         } catch (dbError) {
@@ -172,15 +179,15 @@ export const webhookService = {
         return cleanData;
       };
 
-      const payload = {
+      let webhookPayload: WebhookPayload = {
         event,
         data: prepareWebhookData(),
         timestamp: new Date().toISOString()
       };
 
-      // Verificar se estamos em ambiente de desenvolvimento - expandido para múltiplas portas
+      // Verificar se estamos em ambiente de desenvolvimento
       const isDevelopment = window.location.hostname === 'localhost' || 
-                            window.location.hostname === '127.0.0.1';
+                          window.location.hostname === '127.0.0.1';
       
       console.log(`[Webhook] Ambiente de desenvolvimento: ${isDevelopment}; Origin: ${window.location.origin}`);
 
@@ -189,26 +196,20 @@ export const webhookService = {
         try {
           // Usar sempre a URL principal do webhook
           let url = webhook.url;
-          let useProxy = false;
           
-          // Em ambiente de desenvolvimento, usar o proxy reverso no mesmo domínio
+          // Em ambiente de desenvolvimento, usar o proxy reverso
           if (isDevelopment) {
-            // Se o webhook é para o endpoint com problema CORS
-            if (url.includes('webhook.sistemaneurosaber.com.br')) {
-              // Extrair a parte final do URL após "webhook/"
-              const urlParts = url.split('/webhook/');
-              if (urlParts.length > 1) {
-                const endpoint = urlParts[1]; // Ex: "comentario"
-                
-                // Usar o novo proxy reverso configurado no netlify.toml
-                url = `${window.location.origin}/api/webhook/${endpoint}`;
-                console.log(`[Webhook] Usando proxy reverso no mesmo domínio: ${url}`);
-              } else {
-                // Fallback para o proxy em produção
-                useProxy = true;
-                url = 'https://tickets.sistemaneurosaber.com.br/.netlify/functions/webhook-proxy';
-                console.log(`[Webhook] Redirecionando requisição para proxy em produção: ${url}`);
-              }
+            // Se o webhook é para o endpoint do Neurosaber
+            if (url.includes('sistemaneurosaber.com.br') || url.includes('api.neurosaber.com.br')) {
+              // Usar o proxy em produção
+              url = 'https://tickets.sistemaneurosaber.com.br/.netlify/functions/webhook-proxy';
+              console.log(`[Webhook] Redirecionando requisição para proxy em produção: ${url}`);
+              
+              // Criar um novo payload com a URL original
+              webhookPayload = {
+                ...webhookPayload,
+                targetUrl: webhook.url
+              };
             }
           }
           
@@ -219,20 +220,14 @@ export const webhookService = {
             ...(webhook.headers || {})
           };
 
-          // Adicionar o URL original no payload quando usar o proxy
-          const proxyPayload = useProxy ? {
-            ...payload,
-            targetUrl: webhook.url  // Adicionar URL original para o proxy saber para onde encaminhar
-          } : payload;
-
-          console.log(`[Webhook] Enviando para ${useProxy ? 'proxy → ' + webhook.url : url}:`, JSON.stringify(proxyPayload, null, 2));
+          console.log(`[Webhook] Enviando para ${url}:`, JSON.stringify(webhookPayload, null, 2));
 
           // Fazer a requisição POST
           const response = await axiosInstance({
             method: 'POST',
             url,
             headers,
-            data: proxyPayload,
+            data: webhookPayload,
             validateStatus: (status) => {
               return status >= 200 && status < 300;
             }
@@ -279,7 +274,11 @@ export const webhookService = {
             webhookResponse.priority = response.data.priority;
           }
 
-          return { success: true, url, response: webhookResponse };
+          return {
+            success: true,
+            url: webhook.url,
+            response: webhookResponse
+          } as const;
         } catch (error) {
           console.error(`[Webhook] Erro ao enviar webhook para ${webhook.url}:`, error);
           
@@ -302,7 +301,7 @@ export const webhookService = {
                 headers: webhook.headers || {}
               },
               event,
-              data: payload,
+              data: webhookPayload,
               status: 'pending',
               attempts: 0,
               maxAttempts: 3,
@@ -315,54 +314,32 @@ export const webhookService = {
             console.error('Erro ao adicionar webhook à fila:', queueError);
           }
           
-          return { success: false, url: webhook.url, error };
+          return {
+            success: false,
+            url: webhook.url,
+            error
+          } as const;
         }
       }));
 
-      // Processar respostas bem-sucedidas
-      type WebhookResult = { 
-        success: boolean; 
-        url: string; 
-        response?: WebhookResponse; 
-        error?: unknown;
-      };
-
+      // Filtrar resultados bem-sucedidos
       const successfulResults = results.filter(
-        (result): result is PromiseFulfilledResult<WebhookResult> => 
+        (result): result is PromiseFulfilledResult<{ success: true; url: string; response: WebhookResponse }> => 
           result.status === 'fulfilled' && result.value.success
       );
 
+      // Se houver pelo menos um resultado bem-sucedido, retornar a primeira resposta
       if (successfulResults.length > 0) {
-        // Combinar todas as respostas em uma única
-        const combinedResponse: WebhookResponse = {};
-        
-        // Verificar se temos uma resposta do ClickUp
-        for (const result of successfulResults) {
-          if (result.value.url.toLowerCase().includes('clickup') && result.value.response?.taskId) {
-            // Se temos uma resposta do ClickUp com taskId, priorizar essa
-            combinedResponse.taskId = result.value.response.taskId;
-            if (result.value.response.status) combinedResponse.status = result.value.response.status;
-            if (result.value.response.priority) combinedResponse.priority = result.value.response.priority;
-            
-            // Se temos o taskId do ClickUp, não precisamos do gmailId
-            delete combinedResponse.gmailId;
-            break;
-          }
-        }
-        
-        // Se não temos uma resposta do ClickUp, usar as outras respostas
-        if (!combinedResponse.taskId) {
-          successfulResults.forEach(result => {
-            const response = result.value.response;
-            if (response.taskId) combinedResponse.taskId = response.taskId;
-            if (response.gmailId) combinedResponse.gmailId = response.gmailId;
-            if (response.status) combinedResponse.status = response.status;
-            if (response.priority) combinedResponse.priority = response.priority;
-          });
-        }
-        
-        console.log('Resposta combinada dos webhooks:', combinedResponse);
-        return combinedResponse;
+        return successfulResults[0].value.response;
+      }
+
+      // Se não houver resultados bem-sucedidos, logar os erros
+      const errors = results
+        .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+        .map(result => result.reason);
+
+      if (errors.length > 0) {
+        console.error('[WebhookService] Erros ao enviar webhooks:', errors);
       }
 
       return undefined;

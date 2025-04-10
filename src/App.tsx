@@ -27,6 +27,7 @@ import { AppTour } from './components/AppTour';
 import type { Ticket, TicketStatus, TicketPriority, TicketCategory } from './types/ticket';
 import { CommentsPage } from './pages/CommentsPage';
 import logo from './assets/images/logo.svg';
+import { EmailTemplatesTab } from './features/webhooks/components/EmailTemplates/EmailTemplatesTab';
 
 function MainContent() {
   const navigate = useNavigate();
@@ -227,7 +228,7 @@ if (loading && !toast.isActive(TOAST_ID)) {
                     }`}
                   >
                     <Settings className="h-4 w-4 inline-block mr-1" />
-                    Webhooks
+                    Configurações
                   </button>
                   <button
                     onClick={() => toggleView('users')}
@@ -397,6 +398,7 @@ function App() {
           <Route path="/diary" element={<DiaryPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/comments/:ticketId" element={<CommentsPage />} />
+          <Route path="/webhooks/email-templates" element={<EmailTemplatesTab />} />
           <Route path="/*" element={<MainContent />} />
         </Routes>
       </Router>

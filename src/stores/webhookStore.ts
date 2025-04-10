@@ -39,66 +39,32 @@ export const useWebhookStore = create<WebhookState>()(
       try {
         console.log('[WebhookStore] Buscando webhooks para userId:', userId);
         
-        // Tentativa 1: Buscar via função
-        try {
-          console.log('[WebhookStore] Tentando buscar webhooks via função');
-          
-          const { user } = useAuthStore.getState();
-          if (!user?.uid) {
-            throw new Error('Usuário não autenticado');
-          }
-
-          const response = await fetch('/.netlify/functions/list-webhooks', {
-            method: 'GET',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${user.uid}`
-            }
-          });
-          
-          if (response.ok) {
-            const data = await response.json();
-            console.log('[WebhookStore] Webhooks recebidos via função:', data);
-            
-            if (data && Array.isArray(data.webhooks)) {
-              set({ webhooks: data.webhooks, loading: false });
-              return;
-            } else {
-              console.log('[WebhookStore] Formato inesperado na resposta da função');
-            }
-          } else {
-            console.log('[WebhookStore] Resposta da função não foi OK:', response.status);
-          }
-        } catch (functionError) {
-          console.error('[WebhookStore] Erro ao buscar via função:', functionError);
-        }
-        
-        // Tentativa 2: Buscar diretamente via Firestore
-        console.log('[WebhookStore] Tentando buscar webhooks diretamente via Firestore');
-        
         // Criar webhooks de teste se não existirem
         await criarWebhooksTesteSeNecessario(userId);
 
         // Buscar todos os webhooks do usuário
         const colQuery = query(
           collection(db, 'webhooks_config'),
-          where('userId', '==', userId)
+          where('userId', '==', userId),
+          orderBy('createdAt', 'desc')
         );
         
         const snapshot = await getDocs(colQuery);
         
         if (snapshot.empty) {
-          console.log('[WebhookStore] Nenhum webhook encontrado para o usuário na coleção webhooks_config');
+          console.log('[WebhookStore] Nenhum webhook encontrado para o usuário');
+          set({ webhooks: [], loading: false });
+          return;
         }
         
-        const webhooks = snapshot.docs.map(doc => ({
+        const webhooks = snapshot.docs.map((doc: any) => ({
           id: doc.id,
           ...doc.data(),
           createdAt: doc.data().createdAt?.toDate(),
           updatedAt: doc.data().updatedAt?.toDate()
         })) as WebhookConfig[];
         
-        console.log('[WebhookStore] Webhooks encontrados diretamente:', webhooks.length);
+        console.log('[WebhookStore] Webhooks encontrados:', webhooks.length);
         set({ webhooks, loading: false });
         
       } catch (error) {
@@ -197,7 +163,24 @@ export const useWebhookStore = create<WebhookState>()(
     deleteWebhook: async (id: string) => {
       try {
         set({ loading: true, error: null });
+        
+        // Deletar da coleção principal
         await deleteDoc(doc(db, 'webhooks_config', id));
+        
+        // Tentar deletar da coleção antiga também
+        try {
+          const oldWebhooksQuery = query(
+            collection(db, 'webhooks'),
+            where('id', '==', id)
+          );
+          const snapshot = await getDocs(oldWebhooksQuery);
+          
+          for (const doc of snapshot.docs) {
+            await deleteDoc(doc.ref);
+          }
+        } catch (oldWebhookError) {
+          console.warn('Erro ao tentar deletar webhook da coleção antiga:', oldWebhookError);
+        }
         
         set(state => ({
           webhooks: state.webhooks.filter(webhook => webhook.id !== id),
@@ -342,7 +325,7 @@ async function criarWebhooksTesteSeNecessario(userId: string) {
       // Criar webhook de teste para comentários
       const webhookData = {
         name: 'Webhook de Teste para Comentários',
-        url: 'https://webhook.sistemaneurosaber.com.br/webhook/comentario',
+        url: 'https://api.neurosaber.com.br/webhook/comentario',
         events: ['ticket.created', 'ticket.updated', 'ticket.deleted', 'ticket.status_changed'],
         active: true,
         userId,
@@ -354,11 +337,9 @@ async function criarWebhooksTesteSeNecessario(userId: string) {
         description: 'Webhook de teste criado automaticamente'
       };
       
-      // Adicionar em ambas as coleções para garantir compatibilidade
-      const docRef1 = await addDoc(collection(db, 'webhooks_config'), webhookData);
-      const docRef2 = await addDoc(collection(db, 'webhooks'), webhookData);
-      
-      console.log('[WebhookStore] Webhooks de teste criados:', docRef1.id, docRef2.id);
+      // Adicionar apenas na nova coleção
+      const docRef = await addDoc(collection(db, 'webhooks_config'), webhookData);
+      console.log('[WebhookStore] Webhook de teste criado:', docRef.id);
       return true;
     } else {
       console.log('[WebhookStore] Já existem webhooks configurados:', snapshot.size);
