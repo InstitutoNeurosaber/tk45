@@ -26,6 +26,7 @@ import { ViewProvider } from './components/ViewProvider';
 import { AppTour } from './components/AppTour';
 import type { Ticket, TicketStatus, TicketPriority, TicketCategory } from './types/ticket';
 import { CommentsPage } from './pages/CommentsPage';
+import logo from './assets/images/logo.svg';
 
 function MainContent() {
   const navigate = useNavigate();
@@ -184,8 +185,15 @@ if (loading && !toast.isActive(TOAST_ID)) {
     <div className="min-h-screen bg-background">
       <div className="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center mb-8 app-header">
-          <div className="flex items-center space-x-4">
-            <h1 className="text-2xl font-bold text-foreground">Sistema de Tickets TI</h1>
+          <div className="flex items-center space-x-6">
+            <div className="flex items-center">
+              <img 
+                src={logo} 
+                alt="Logo Sistema de Tickets" 
+                className="h-16 w-auto object-contain transition-transform hover:scale-105"
+                style={{ maxWidth: '180px' }}
+              />
+            </div>
             <nav className="flex space-x-2">
               <button
                 onClick={() => toggleView('tickets')}

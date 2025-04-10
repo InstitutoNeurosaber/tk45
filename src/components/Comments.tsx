@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { 
   Send, 
   User, 
@@ -7,7 +8,8 @@ import {
   X,
   AlertTriangle,
   Loader,
-  CheckCircle
+  CheckCircle,
+  ExternalLink
 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { useComments } from '../hooks/useComments';
@@ -22,17 +24,63 @@ interface CommentsProps {
   showHeader?: boolean;
 }
 
+// Interface para o popup de imagem
+interface ImagePopupProps {
+  imageUrl: string;
+  onClose: () => void;
+}
+
+// Componente do popup de imagem
+function ImagePopup({ imageUrl, onClose }: ImagePopupProps) {
+  // Fechar o popup quando pressionar ESC
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [onClose]);
+
+  return (
+    <div 
+      className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50"
+      onClick={onClose}
+    >
+      <div className="relative max-w-[90vw] max-h-[90vh]">
+        <img 
+          src={imageUrl} 
+          alt="Imagem ampliada" 
+          className="max-w-full max-h-[90vh] object-contain"
+          onClick={(e) => e.stopPropagation()}
+        />
+        <button
+          className="absolute top-4 right-4 p-2 bg-black bg-opacity-50 rounded-full text-white hover:bg-opacity-75 transition-all"
+          onClick={onClose}
+          title="Fechar imagem"
+          aria-label="Fechar imagem"
+        >
+          <X className="w-6 h-6" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Comments({ ticket, showHeader = true }: CommentsProps) {
   const { user } = useAuthStore();
   const [newComment, setNewComment] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const commentsContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
   const { uploadImage } = useMongoImageUpload();
+  const navigate = useNavigate();
 
   const {
     comments,
@@ -315,13 +363,18 @@ export function Comments({ ticket, showHeader = true }: CommentsProps) {
           src={src} 
           alt={alt} 
           className="max-w-full rounded-lg hover:opacity-95 transition-opacity cursor-pointer" 
-          onClick={() => window.open(src, '_blank')}
+          onClick={() => setSelectedImage(src)}
         />
       );
     }
     
     // Caso contrário, é um texto normal
     return <div className="whitespace-pre-wrap">{content}</div>;
+  };
+
+  // Função para navegar para a página de comentários
+  const handleOpenFullChat = () => {
+    navigate(`/comments/${ticket.id}`);
   };
 
   if (loading) {
@@ -335,14 +388,28 @@ export function Comments({ ticket, showHeader = true }: CommentsProps) {
 
   return (
     <div className="flex flex-col h-full border rounded-lg" aria-label="Seção de comentários">
+      {selectedImage && (
+        <ImagePopup 
+          imageUrl={selectedImage} 
+          onClose={() => setSelectedImage(null)} 
+        />
+      )}
       {showHeader && (
-        <div className="p-4 border-b">
+        <div className="p-4 border-b flex justify-between items-center">
           <h2 className="text-lg font-medium flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
             </svg>
             Comentários
           </h2>
+          <button
+            onClick={handleOpenFullChat}
+            className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-full transition-colors"
+            title="Abrir chat em tela cheia"
+          >
+            <span className="mr-1">Ver todos</span>
+            <ExternalLink className="w-4 h-4" />
+          </button>
         </div>
       )}
 

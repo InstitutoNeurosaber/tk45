@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Mail } from 'lucide-react';
 import { useAuthStore } from '../stores/authStore';
+import logo from '../assets/images/logo.svg';
 
 export function Auth() {
   const [email, setEmail] = useState('');
@@ -15,8 +16,14 @@ export function Auth() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
-        <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+        <div className="flex flex-col items-center">
+          <img 
+            src={logo} 
+            alt="Logo Sistema de Tickets" 
+            className="h-24 w-auto object-contain mb-6 transition-transform hover:scale-105"
+            style={{ maxWidth: '240px' }}
+          />
+          <h2 className="text-center text-2xl font-semibold text-gray-900">
             Entrar no sistema
           </h2>
         </div>
