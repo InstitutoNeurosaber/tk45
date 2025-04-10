@@ -1,0 +1,43 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Regras para comentários
+    match /comments/{commentId}/{fileName} {
+      allow read: if true;  // Permite leitura pública
+      allow write: if request.auth != null 
+        && request.resource.size < 10 * 1024 * 1024  // 10MB max
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Regras para imagens gerais
+    match /images/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null 
+        && request.resource.size < 10 * 1024 * 1024  // 10MB max
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Regras para fotos de perfil
+    match /users/{userId}/photo {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null 
+        && request.auth.uid == userId
+        && request.resource.size < 2 * 1024 * 1024  // 2MB max
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // Regras para anexos de tickets
+    match /tickets/{ticketId}/attachments/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null 
+        && request.resource.size < 10 * 1024 * 1024  // 10MB max
+        && request.resource.metadata.uploadedBy == request.auth.uid;
+    }
+
+    // Regra padrão para outros arquivos
+    match /{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+  }
+} 

@@ -19,7 +19,7 @@ import {
   startAfter,
   getDocs
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { ref, uploadBytes, getDownloadURL, deleteObject, uploadBytesResumable } from 'firebase/storage';
 import { db, storage } from '../lib/firebase';
 import { useAuthStore } from '../stores/authStore';
 import { v4 as uuidv4 } from 'uuid';
@@ -316,95 +316,85 @@ export function useComments(ticketId: string) {
     setError(null);
 
     try {
-      // Verificar se é uma imagem
-      if (!file.type.startsWith('image/')) {
-        throw new Error('O arquivo selecionado não é uma imagem');
-      }
-
-      const fileId = uuidv4();
-      const fileRef = ref(storage, `comments/${ticketId}/${fileId}-${file.name}`);
-      
-      // Upload para o Storage
-      await uploadBytes(fileRef, file);
-      const downloadUrl = await getDownloadURL(fileRef);
-      
-      // Criar anexo
-      const attachment: CommentAttachment = {
-        id: fileId,
-        url: downloadUrl,
+      console.log('Iniciando processo de upload...', {
         fileName: file.name,
-        fileType: file.type,
         fileSize: file.size,
-        createdAt: new Date()
-      };
-
-      // Adicionar comentário com a imagem
-      const commentsRef = collection(db, 'tickets', ticketId, 'comments');
-      
-      await addDoc(commentsRef, {
-        content: `![${file.name}](${downloadUrl})`,
-        userId: user.uid,
-        userName: user.displayName || 'Usuário',
-        userPhotoURL: user.photoURL || null,
-        createdAt: Timestamp.now(),
-        attachments: [attachment]
+        fileType: file.type,
+        user: user.uid
       });
 
-      // Atualizar o contador do ticket, mas sem bloquear a conclusão da ação
-      try {
-        const ticketRef = doc(db, 'tickets', ticketId);
-        const ticketDoc = await getDoc(ticketRef);
-        
-        if (ticketDoc.exists()) {
-          const ticketData = ticketDoc.data();
-          const currentCount = ticketData.commentCount || 0;
-          
-          // Enviar notificações para o autor do ticket e responsável
-          await sendNotificationForComment(
-            ticketData, 
-            user.displayName || 'Usuário'
-          );
-          
-          // Sincronizar o comentário com o ClickUp, se houver taskId
-          if (ticketData.taskId) {
-            try {
-              const commentText = `**${user.displayName || 'Usuário'} enviou uma imagem:** ${file.name}\n${downloadUrl}`;
-              console.log(`Tentando enviar comentário com imagem para o ClickUp (taskId: ${ticketData.taskId}) por ${user.email} (${user.uid})`);
-              
-              const success = await clickupService.addCommentToTask(
-                ticketData.taskId,
-                commentText,
-                user.displayName || 'Usuário'
-              );
-              
-              if (success) {
-                console.log(`Comentário com imagem sincronizado com sucesso no ClickUp na tarefa ${ticketData.taskId}`);
-              } else {
-                console.warn(`Falha ao sincronizar comentário com imagem para o ClickUp na tarefa ${ticketData.taskId}, mas sem erro específico`);
-              }
-            } catch (clickupError) {
-              console.error('Erro ao sincronizar comentário com imagem para o ClickUp:', clickupError);
-              // Não tratar como erro crítico para não bloquear a adição do comentário no sistema
-            }
-          }
-          
-          await updateDoc(ticketRef, {
-            commentCount: currentCount + 1,
-            updatedAt: Timestamp.now()
-          });
-        }
-      } catch (updateError) {
-        console.warn('Não foi possível atualizar o contador de comentários, mas o comentário com imagem foi adicionado:', updateError);
-        // Não tratar como erro crítico
-      }
+      // Criar referência para o arquivo
+      const fileName = `${Date.now()}-${file.name}`;
+      const storageRef = ref(storage, `comments/${ticketId}/${fileName}`);
+      
+      console.log('Referência do storage criada:', storageRef.fullPath);
 
-      setSubmitting(false);
+      // Configurar metadata
+      const metadata = {
+        contentType: file.type,
+        customMetadata: {
+          uploadedBy: user.uid,
+          originalName: file.name
+        }
+      };
+
+      // Upload direto com metadata
+      console.log('Iniciando upload com metadata...');
+      const uploadTask = uploadBytesResumable(storageRef, file, metadata);
+
+      // Monitorar progresso
+      uploadTask.on(
+        'state_changed',
+        (snapshot) => {
+          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+          console.log(`Progresso do upload: ${progress.toFixed(2)}%`);
+          console.log('Estado atual:', snapshot.state);
+        },
+        (error) => {
+          console.error('Erro durante upload:', error);
+          console.error('Código do erro:', error.code);
+          console.error('Mensagem do erro:', error.message);
+          setError(`Erro no upload: ${error.message}`);
+          setSubmitting(false);
+        },
+        async () => {
+          try {
+            console.log('Upload concluído, obtendo URL...');
+            const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
+            console.log('URL obtida:', downloadUrl);
+
+            // Criar comentário
+            const commentsRef = collection(db, 'tickets', ticketId, 'comments');
+            await addDoc(commentsRef, {
+              content: `![${file.name}](${downloadUrl})`,
+              userId: user.uid,
+              userName: user.displayName || 'Usuário',
+              userPhotoURL: user.photoURL || null,
+              createdAt: serverTimestamp(),
+              attachments: [{
+                url: downloadUrl,
+                fileName: file.name,
+                fileType: file.type,
+                fileSize: file.size,
+                createdAt: new Date()
+              }]
+            });
+
+            console.log('Comentário criado com sucesso');
+            setSubmitting(false);
+          } catch (err) {
+            console.error('Erro ao finalizar processo:', err);
+            setError('Erro ao salvar o comentário');
+            setSubmitting(false);
+          }
+        }
+      );
     } catch (err) {
-      console.error('Erro ao adicionar comentário com imagem:', err);
-      setError(err instanceof Error ? err.message : 'Falha ao adicionar a imagem. Por favor, tente novamente.');
+      console.error('Erro ao iniciar upload:', err);
+      setError('Erro ao iniciar upload da imagem');
       setSubmitting(false);
     }
-  }, [ticketId, user, sendNotificationForComment]);
+  }, [ticketId, user]);
 
   // Remover um comentário
   const deleteComment = useCallback(async (commentId: string) => {

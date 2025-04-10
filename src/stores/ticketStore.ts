@@ -21,6 +21,7 @@ interface TicketState {
   optimisticUpdateStatus: (ticketId: string, status: TicketStatus) => void;
   syncWithClickUp: (ticket: Ticket) => Promise<Ticket>;
   archiveTicket: (ticketId: string) => Promise<void>;
+  unarchiveTicket: (ticketId: string) => Promise<void>;
 }
 
 export const useTicketStore = create<TicketState>((set, get) => ({
@@ -247,7 +248,51 @@ export const useTicketStore = create<TicketState>((set, get) => ({
         updatedAt: now
       });
       
-      // Não é necessário sincronizar este status com o ClickUp, pois é um estado interno
+    } catch (error) {
+      // Reverter em caso de erro
+      set({ tickets: previousTickets });
+      throw error;
+    }
+  },
+
+  unarchiveTicket: async (ticketId: string) => {
+    const previousTickets = get().tickets;
+    const now = new Date();
+    const currentTicket = get().tickets.find(t => t.id === ticketId);
+    
+    // Obter o estado do usuário atual
+    const { userData } = useAuthStore.getState();
+    
+    // Verificar se o usuário é administrador
+    if (userData?.role !== 'admin') {
+      throw new Error('Apenas administradores podem desarquivar tickets');
+    }
+    
+    if (!currentTicket) {
+      throw new Error('Ticket não encontrado');
+    }
+    
+    try {
+      // Atualização otimista
+      set(state => ({
+        tickets: state.tickets.map(t => 
+          t.id === ticketId ? { 
+            ...t, 
+            archived: false, 
+            archivedAt: undefined,
+            archivedBy: undefined,
+            updatedAt: now 
+          } : t
+        )
+      }));
+
+      // Atualizar no backend
+      await ticketService.updateTicket(ticketId, {
+        archived: false,
+        archivedAt: undefined,
+        archivedBy: undefined,
+        updatedAt: now
+      });
       
     } catch (error) {
       // Reverter em caso de erro

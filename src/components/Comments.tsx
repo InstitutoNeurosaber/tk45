@@ -133,7 +133,43 @@ export function Comments({ ticket, showHeader = true }: CommentsProps) {
 
     const files = Array.from(e.dataTransfer.files);
     if (files.length > 0) {
-      await handleFile(files[0]); // Processar apenas o primeiro arquivo
+      const file = files[0];
+      
+      // Verificar se é uma imagem
+      if (!file.type.startsWith('image/')) {
+        toast.error('Apenas imagens são permitidas', {
+          position: 'bottom-right',
+          autoClose: 3000
+        });
+        return;
+      }
+      
+      await handleFile(file);
+    }
+  };
+
+  // Função para processar um arquivo de imagem
+  const handleFile = async (file: File) => {
+    try {
+      await addImageComment(file);
+      toast.success('Imagem enviada com sucesso!', {
+        position: 'bottom-right',
+        autoClose: 3000,
+        hideProgressBar: true,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true
+      });
+    } catch (error) {
+      console.error('Erro ao enviar imagem:', error);
+      toast.error(error instanceof Error ? error.message : 'Erro ao enviar imagem. Tente novamente.', {
+        position: 'bottom-right',
+        autoClose: 5000,
+        hideProgressBar: false,
+        closeOnClick: true,
+        pauseOnHover: true,
+        draggable: true
+      });
     }
   };
 
@@ -141,25 +177,23 @@ export function Comments({ ticket, showHeader = true }: CommentsProps) {
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      await handleFile(files[0]);
+      const file = files[0];
+      
+      // Verificar se é uma imagem
+      if (!file.type.startsWith('image/')) {
+        toast.error('Apenas imagens são permitidas', {
+          position: 'bottom-right',
+          autoClose: 3000
+        });
+        return;
+      }
+      
+      await handleFile(file);
     }
+    
     // Limpar o input para permitir selecionar o mesmo arquivo novamente
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
-    }
-  };
-
-  // Função para processar um arquivo de imagem
-  const handleFile = async (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      alert('Apenas imagens são permitidas');
-      return;
-    }
-
-    try {
-      await addImageComment(file);
-    } catch (error) {
-      console.error('Erro ao enviar imagem:', error);
     }
   };
 

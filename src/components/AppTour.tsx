@@ -12,26 +12,31 @@ export function AppTour({ autoStart = true }: AppTourProps) {
   const [run, setRun] = useState(false);
   // Estado para controlar o passo atual (modo controlado)
   const [stepIndex, setStepIndex] = useState(0);
+  // Estado para controlar se o tour já foi iniciado nesta sessão
+  const [hasStartedThisSession, setHasStartedThisSession] = useState(false);
   
   // Buscar preferências do usuário
   const { theme, tourCompleted, completeTour, resetTour } = useViewStore();
   
   // Iniciar o tour automaticamente se for a primeira visita
   useEffect(() => {
-    if (autoStart && !tourCompleted) {
+    if (autoStart && !tourCompleted && !hasStartedThisSession) {
       // Pequeno delay para garantir que os elementos estejam renderizados
       const timer = setTimeout(() => {
         setRun(true);
-      }, 1000);
+        setHasStartedThisSession(true);
+      }, 1500);
       
       return () => clearTimeout(timer);
     }
-  }, [autoStart, tourCompleted]);
+  }, [autoStart, tourCompleted, hasStartedThisSession]);
   
   // Função para reiniciar o tutorial manualmente
   const reiniciarTutorial = () => {
     setStepIndex(0);
     setRun(true);
+    setHasStartedThisSession(true);
+    resetTour();
   };
   
   // Definir os passos do tutorial
@@ -42,66 +47,95 @@ export function AppTour({ autoStart = true }: AppTourProps) {
       placement: 'bottom',
       disableBeacon: true,
       title: 'Bem-vindo!',
+      spotlightPadding: 15,
+      disableOverlayClose: true,
+      hideCloseButton: true,
     },
     {
       target: '.create-ticket-button',
       content: 'Clique aqui para criar um novo chamado quando precisar de suporte técnico.',
       placement: 'left',
       title: 'Criar Chamado',
+      spotlightPadding: 5,
+      disableOverlayClose: true,
+      hideCloseButton: true,
     },
     {
       target: '.toggle-theme-button',
       content: 'Você pode alternar entre os modos claro e escuro conforme sua preferência visual.',
       placement: 'bottom',
       title: 'Alterar Tema',
+      spotlightPadding: 5,
+      disableOverlayClose: true,
+      hideCloseButton: true,
     },
     {
       target: '.view-mode-toggle',
       content: 'Alterne entre a visualização em lista ou quadro kanban para organizar seus chamados.',
       placement: 'left',
       title: 'Visualização',
+      spotlightPadding: 5,
+      disableOverlayClose: true,
+      hideCloseButton: true,
     },
     {
       target: '.ticket-list',
       content: 'Aqui você verá todos os seus chamados. Clique em um para visualizar os detalhes completos.',
       placement: 'top',
       title: 'Lista de Chamados',
+      spotlightPadding: 10,
+      disableOverlayClose: true,
+      hideCloseButton: true,
     },
     {
       target: '.create-ticket-button',
       content: 'Vamos aprender a criar um chamado! Clique neste botão para abrir o formulário de criação.',
       placement: 'left',
       title: 'Criando um Chamado',
+      spotlightPadding: 5,
+      disableOverlayClose: true,
+      hideCloseButton: true,
     },
     {
       target: 'body',
       content: 'No formulário de criação, preencha o título do chamado, descreva detalhadamente o problema, selecione a categoria adequada e defina a prioridade. Quanto mais informações você fornecer, mais rapidamente sua solicitação será atendida.',
       placement: 'center',
       title: 'Preenchendo o Formulário',
+      disableOverlayClose: true,
+      hideCloseButton: true,
     },
     {
       target: 'body',
       content: 'Após preencher todos os campos necessários, clique no botão "Enviar" para criar o chamado. Um novo item será adicionado à sua lista de chamados.',
       placement: 'center',
       title: 'Enviando o Chamado',
+      disableOverlayClose: true,
+      hideCloseButton: true,
     },
     {
       target: '.ticket-list',
       content: 'Após a criação, seu novo chamado aparecerá aqui. Você pode clicar nele para acompanhar seu progresso e interagir com a equipe de suporte.',
       placement: 'top',
       title: 'Acompanhando o Chamado',
+      spotlightPadding: 10,
+      disableOverlayClose: true,
+      hideCloseButton: true,
     },
     {
       target: 'body',
       content: 'Na tela de detalhes do chamado, você pode adicionar comentários, anexar arquivos importantes e acompanhar todo o histórico de atendimento da sua solicitação.',
       placement: 'center',
       title: 'Detalhes do Chamado',
+      disableOverlayClose: true,
+      hideCloseButton: true,
     },
     {
       target: 'body',
       content: 'Quando seu problema for resolvido, você pode marcar o chamado como "Concluído". Se não precisar mais dele, pode arquivá-lo para manter sua lista organizada e focada nas solicitações ativas.',
       placement: 'center',
       title: 'Concluindo o Chamado',
+      disableOverlayClose: true,
+      hideCloseButton: true,
     }
   ];
   
@@ -127,11 +161,34 @@ export function AppTour({ autoStart = true }: AppTourProps) {
       options: {
         arrowColor: theme === 'dark' ? '#374151' : '#ffffff',
         backgroundColor: theme === 'dark' ? '#374151' : '#ffffff',
-        overlayColor: 'rgba(0, 0, 0, 0.5)',
+        overlayColor: 'rgba(0, 0, 0, 0.75)',
         primaryColor: '#3b82f6',
         textColor: theme === 'dark' ? '#f3f4f6' : '#1f2937',
         zIndex: 1000,
-      }
+        spotlightShadow: '0 0 15px rgba(0, 0, 0, 0.5)',
+        width: 400,
+        beaconSize: 36,
+      },
+      tooltip: {
+        fontSize: '14px',
+        padding: '20px',
+      },
+      tooltipTitle: {
+        fontSize: '16px',
+        fontWeight: 600,
+      },
+      buttonNext: {
+        fontSize: '14px',
+        padding: '8px 16px',
+      },
+      buttonBack: {
+        fontSize: '14px',
+        padding: '8px 16px',
+      },
+      buttonSkip: {
+        fontSize: '14px',
+        padding: '8px 16px',
+      },
     };
   };
   
@@ -140,7 +197,7 @@ export function AppTour({ autoStart = true }: AppTourProps) {
       <Joyride
         callback={processarEventoTutorial}
         continuous
-        hideCloseButton={false}
+        hideCloseButton
         run={run}
         scrollToFirstStep
         showProgress
@@ -149,6 +206,8 @@ export function AppTour({ autoStart = true }: AppTourProps) {
         steps={passos}
         styles={obterEstilos()}
         disableScrolling={false}
+        disableOverlayClose
+        spotlightClicks
         locale={{
           back: 'Voltar',
           close: 'Fechar',
@@ -168,21 +227,16 @@ export function AppTour({ autoStart = true }: AppTourProps) {
       />
       
       {/* Botão para reiniciar o tutorial manualmente */}
-      {tourCompleted && (
-        <button
-          onClick={() => {
-            resetTour();
-            reiniciarTutorial();
-          }}
-          className="fixed bottom-4 right-4 z-10 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-2 shadow-lg"
-          title="Mostrar Tutorial"
-          aria-label="Abrir tutorial"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 4.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </button>
-      )}
+      <button
+        onClick={reiniciarTutorial}
+        className="fixed bottom-4 right-4 z-10 bg-blue-600 hover:bg-blue-700 text-white rounded-full p-3 shadow-lg transition-all duration-200 hover:scale-105"
+        title="Mostrar Tutorial"
+        aria-label="Abrir tutorial"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 4.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </button>
     </>
   );
 } 

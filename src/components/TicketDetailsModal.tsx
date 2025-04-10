@@ -16,7 +16,9 @@ import {
   RefreshCw,
   XCircle,
   MessageSquare,
-  Archive
+  Archive,
+  ArchiveRestore,
+  Image as ImageIcon
 } from 'lucide-react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
@@ -28,6 +30,8 @@ import type { Ticket, TicketStatus, TicketPriority } from '../types/ticket';
 import { clickupService } from '../services/clickupService';
 import { Comments } from './Comments';
 import { TicketPriority as TicketPriorityComponent } from './TicketDetails/TicketPriority';
+import { TicketImageAttachments } from './TicketImageAttachments';
+import { useComments } from '../hooks/useComments';
 
 interface TicketDetailsModalProps {
   ticket: Ticket;
@@ -39,7 +43,8 @@ interface TicketDetailsModalProps {
 export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }: TicketDetailsModalProps) {
   const navigate = useNavigate();
   const { userData } = useAuthStore();
-  const { updateTicket, deleteTicket, syncWithClickUp, archiveTicket } = useTicketStore();
+  const { updateTicket, deleteTicket, syncWithClickUp, archiveTicket, unarchiveTicket } = useTicketStore();
+  const { addImageComment, comments } = useComments(ticket.id);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -58,6 +63,7 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
   const [clickUpSyncError, setClickUpSyncError] = useState<string | null>(null);
   const [clickUpSyncSuccess, setClickUpSyncSuccess] = useState(false);
   const [archiveModalOpen, setArchiveModalOpen] = useState(false);
+  const [unarchiveModalOpen, setUnarchiveModalOpen] = useState(false);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -332,10 +338,36 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
     }
   };
 
+  const handleUnarchive = async () => {
+    try {
+      setLoading(true);
+      await unarchiveTicket(ticket.id);
+      
+      // Atualizar o ticket local para refletir as mudanças
+      const unarchiveData = {
+        archived: false,
+        archivedAt: undefined,
+        archivedBy: undefined
+      };
+      
+      onUpdate({
+        ...ticket,
+        ...unarchiveData
+      });
+      
+      onClose();
+    } catch (error) {
+      console.error('Erro ao desarquivar ticket:', error);
+      setError(error instanceof Error ? error.message : 'Erro ao desarquivar ticket. Por favor, tente novamente.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (error) {
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+        <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-medium text-red-600">Erro</h3>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-500" title="Fechar">
@@ -451,16 +483,27 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                   </a>
                 )}
                 
-                {/* Botão de Arquivar - mostrar apenas se não estiver arquivado */}
-                {userData?.role === 'admin' && !ticket.archived && (
-                  <button
-                    onClick={() => setArchiveModalOpen(true)}
-                    className="inline-flex items-center px-3 py-2 text-sm font-medium text-purple-600 hover:text-purple-700 transition-colors"
-                    title="Arquivar ticket"
-                  >
-                    <Archive className="h-4 w-4 mr-2" />
-                    Arquivar
-                  </button>
+                {/* Botão de Arquivar/Desarquivar - mostrar baseado no estado atual */}
+                {userData?.role === 'admin' && (
+                  ticket.archived ? (
+                    <button
+                      onClick={() => setUnarchiveModalOpen(true)}
+                      className="inline-flex items-center px-3 py-2 text-sm font-medium text-purple-600 hover:text-purple-700 transition-colors"
+                      title="Desarquivar ticket"
+                    >
+                      <ArchiveRestore className="h-4 w-4 mr-2" />
+                      Desarquivar
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setArchiveModalOpen(true)}
+                      className="inline-flex items-center px-3 py-2 text-sm font-medium text-purple-600 hover:text-purple-700 transition-colors"
+                      title="Arquivar ticket"
+                    >
+                      <Archive className="h-4 w-4 mr-2" />
+                      Arquivar
+                    </button>
+                  )
                 )}
                 
                 <button
@@ -557,6 +600,34 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                   <MessageSquare className="h-5 w-5 text-gray-500 mr-2" />
                   Comentários
                 </h3>
+                
+                {/* Anexos de Imagens */}
+                <div className="mb-6">
+                  <h4 className="text-md font-medium text-gray-700 mb-3 flex items-center">
+                    <ImageIcon className="h-5 w-5 text-gray-500 mr-2" />
+                    Anexos
+                  </h4>
+                  <TicketImageAttachments
+                    existingImages={comments
+                      .filter(comment => comment.attachments?.length > 0)
+                      .flatMap(comment => 
+                        comment.attachments?.map(attachment => ({
+                          url: attachment.url,
+                          name: attachment.name || 'Imagem'
+                        })) || []
+                      )}
+                    onImagesChange={(images) => {
+                      images.forEach(async (image) => {
+                        try {
+                          await addImageComment(image.file);
+                        } catch (error) {
+                          console.error('Erro ao anexar imagem:', error);
+                        }
+                      });
+                    }}
+                  />
+                </div>
+
                 <div className="max-h-[400px]">
                   <Comments ticket={ticket} showHeader={false} />
                 </div>
@@ -835,6 +906,45 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                 className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
               >
                 Arquivar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Desarquivamento */}
+      {unarchiveModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[60]">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-start">
+                <div className="flex-shrink-0">
+                  <ArchiveRestore className="h-6 w-6 text-purple-600" />
+                </div>
+                <div className="ml-3 w-0 flex-1">
+                  <h3 className="text-lg font-medium text-gray-900">
+                    Desarquivar Ticket
+                  </h3>
+                  <p className="mt-2 text-sm text-gray-500">
+                    Tem certeza que deseja desarquivar este ticket? O ticket voltará a aparecer na lista principal 
+                    e poderá ser editado normalmente.
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="bg-gray-50 px-6 py-4 rounded-b-lg flex justify-end space-x-3">
+              <button
+                onClick={() => setUnarchiveModalOpen(false)}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleUnarchive}
+                className="px-4 py-2 text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
+              >
+                Desarquivar
               </button>
             </div>
           </div>

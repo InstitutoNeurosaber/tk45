@@ -197,8 +197,8 @@ export function TicketPriority({ ticket, onChange, disabled }: TicketPriorityPro
       {/* Modal de Justificativa */}
       {showReasonDialog && isAdmin && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-            <div className="p-6">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] flex flex-col">
+            <div className="p-6 overflow-y-auto">
               <h3 className="text-lg font-medium text-gray-900 mb-4">
                 Alterar Prioridade do Ticket
               </h3>
@@ -224,7 +224,7 @@ export function TicketPriority({ ticket, onChange, disabled }: TicketPriorityPro
                     <p className="text-sm font-medium text-gray-700">
                       Selecione uma justificativa ou escreva sua própria:
                     </p>
-                    <div className="space-y-2">
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
                       {suggestions.map((suggestion, index) => (
                         <button
                           key={index}
@@ -303,23 +303,24 @@ export function TicketPriority({ ticket, onChange, disabled }: TicketPriorityPro
               </div>
             </div>
 
-            <div className="bg-gray-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg">
+            {/* Botões de ação */}
+            <div className="px-6 py-4 bg-gray-50 rounded-b-lg border-t flex justify-end space-x-3">
               <button
                 onClick={() => {
                   setShowReasonDialog(false);
                   setShowPreview(false);
                   setPriorityReason('');
                 }}
-                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-gray-900"
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
               >
                 Cancelar
               </button>
               <button
                 onClick={handleConfirmPriorityChange}
-                disabled={!priorityReason.trim() || !isAdmin}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                disabled={!priorityReason.trim()}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Confirmar Alteração
+                Confirmar alteração
               </button>
             </div>
           </div>

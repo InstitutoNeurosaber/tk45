@@ -12,6 +12,7 @@ import {
   orderBy
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { useAuthStore } from './authStore';
 import type { WebhookConfig, WebhookEvent, WebhookPayload } from '../types/webhook';
 
 interface WebhookState {
@@ -42,12 +43,17 @@ export const useWebhookStore = create<WebhookState>()(
         try {
           console.log('[WebhookStore] Tentando buscar webhooks via função');
           
+          const { user } = useAuthStore.getState();
+          if (!user?.uid) {
+            throw new Error('Usuário não autenticado');
+          }
+
           const response = await fetch('/.netlify/functions/list-webhooks', {
-            method: 'POST',
+            method: 'GET',
             headers: {
               'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ userId })
+              'Authorization': `Bearer ${user.uid}`
+            }
           });
           
           if (response.ok) {

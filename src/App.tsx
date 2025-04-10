@@ -21,7 +21,7 @@ import { UserMenu } from './components/UserMenu';
 import { TicketFilters } from './components/TicketFilters';
 import { UserManagement } from './components/UserManagement';
 import { DiaryPage } from './pages/Diary';
-import { ProfilePage } from './components/ProfilePage';
+import { ProfilePage } from './pages/Profile';
 import { ViewProvider } from './components/ViewProvider';
 import { AppTour } from './components/AppTour';
 import type { Ticket, TicketStatus, TicketPriority, TicketCategory } from './types/ticket';
@@ -387,6 +387,7 @@ function App() {
       <Router>
         <Routes>
           <Route path="/diary" element={<DiaryPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
           <Route path="/comments/:ticketId" element={<CommentsPage />} />
           <Route path="/*" element={<MainContent />} />
         </Routes>
