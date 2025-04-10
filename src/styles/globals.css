@@ -4,48 +4,48 @@
 
 @layer base {
   :root {
-    --background: 210 40% 98%;
-    --foreground: 222.2 47.4% 11.2%;
+    --background: 0 0% 100%;
+    --foreground: 0 0% 7%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 47.4% 11.2%;
+    --card-foreground: 0 0% 7%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 47.4% 11.2%;
-    --primary: 210 80% 42%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 80% 48%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 210 80% 42%;
+    --popover-foreground: 0 0% 7%;
+    --primary: 165 73% 56%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 92%;
+    --secondary-foreground: 0 0% 7%;
+    --muted: 0 0% 92%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 191 86% 42%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 92%;
+    --input: 0 0% 92%;
+    --ring: 165 73% 56%;
     --radius: 0.5rem;
   }
 
   .dark {
-    --background: 222.2 24% 12%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 24% 15%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 24% 15%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 210 60% 60%;
-    --primary-foreground: 222.2 24% 12%;
-    --secondary: 222.2 24% 18%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 222.2 24% 18%;
-    --muted-foreground: 215 20.2% 75%;
-    --accent: 210 60% 55%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 40.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 222.2 24% 20%;
-    --input: 222.2 24% 18%;
-    --ring: 210 60% 60%;
+    --background: 0 0% 11%;
+    --foreground: 0 0% 95%;
+    --card: 0 0% 17%;
+    --card-foreground: 0 0% 95%;
+    --popover: 0 0% 17%;
+    --popover-foreground: 0 0% 95%;
+    --primary: 165 73% 56%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 23%;
+    --secondary-foreground: 0 0% 95%;
+    --muted: 0 0% 23%;
+    --muted-foreground: 0 0% 75%;
+    --accent: 191 86% 42%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 63% 41%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 23%;
+    --input: 0 0% 23%;
+    --ring: 165 73% 56%;
   }
 }
 
@@ -105,20 +105,20 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: rgb(209 213 219 / 0.5);
+  background-color: hsl(var(--border) / 0.5);
   border-radius: 9999px;
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background-color: rgb(55 65 81 / 0.3);
+  background-color: hsl(var(--border) / 0.3);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background-color: rgb(156 163 175 / 0.7);
+  background-color: hsl(var(--border) / 0.7);
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-  background-color: rgb(75 85 99 / 0.5);
+  background-color: hsl(var(--border) / 0.5);
 }
 
 /* Estilos específicos para modo dark */
@@ -133,35 +133,35 @@
 
 .dark .border-gray-100,
 .dark .border-gray-200 {
-  border-color: rgb(31 41 55 / 0.2);
+  border-color: hsl(var(--border) / 0.2);
 }
 
 .dark .text-gray-500 {
-  color: rgb(156 163 175 / 0.8);
+  color: hsl(var(--foreground) / 0.6);
 }
 
 .dark .text-gray-600 {
-  color: rgb(209 213 219 / 0.8);
+  color: hsl(var(--foreground) / 0.7);
 }
 
 .dark .text-gray-700 {
-  color: rgb(229 231 235 / 0.8);
+  color: hsl(var(--foreground) / 0.8);
 }
 
 .dark .text-gray-900 {
-  color: rgb(243 244 246 / 0.8);
+  color: hsl(var(--foreground) / 0.9);
 }
 
 .dark .bg-gray-50 {
-  background-color: rgb(17 24 39 / 0.2);
+  background-color: hsl(var(--border) / 0.1);
 }
 
 .dark .bg-gray-100 {
-  background-color: rgb(31 41 55 / 0.2);
+  background-color: hsl(var(--border) / 0.2);
 }
 
 .dark .hover\:bg-gray-50:hover {
-  background-color: rgb(31 41 55 / 0.2);
+  background-color: hsl(var(--border) / 0.1);
 }
 
 .dark button.bg-white {
@@ -235,13 +235,13 @@
 }
 
 .dark .bg-blue-100 {
-  background-color: rgba(30, 64, 175, 0.08);
-  color: rgb(191 219 254 / 0.9);
+  background-color: hsl(var(--accent) / 0.08);
+  color: hsl(var(--accent) / 0.9);
 }
 
 .dark .bg-green-100 {
-  background-color: rgba(6, 78, 59, 0.08);
-  color: rgb(187 247 208 / 0.9);
+  background-color: hsl(var(--primary) / 0.08);
+  color: hsl(var(--primary) / 0.9);
 }
 
 .dark .bg-red-200 {
@@ -255,13 +255,13 @@
 }
 
 .dark .bg-blue-200 {
-  background-color: rgba(30, 64, 175, 0.15);
-  color: rgb(191 219 254);
+  background-color: hsl(var(--accent) / 0.15);
+  color: hsl(var(--accent));
 }
 
 .dark .bg-green-200 {
-  background-color: rgba(6, 78, 59, 0.15);
-  color: rgb(187 247 208);
+  background-color: hsl(var(--primary) / 0.15);
+  color: hsl(var(--primary));
 }
 
 .dark .text-red-700 {
@@ -273,11 +273,11 @@
 }
 
 .dark .text-blue-700 {
-  color: rgb(191 219 254 / 0.9);
+  color: hsl(var(--accent) / 0.9);
 }
 
 .dark .text-green-700 {
-  color: rgb(187 247 208 / 0.9);
+  color: hsl(var(--primary) / 0.9);
 }
 
 /* Inputs e forms no dark mode */
@@ -355,23 +355,23 @@
 
 /* Links no dark mode */
 .dark .text-blue-600 {
-  color: hsl(210 60% 70%);
+  color: hsl(var(--accent) / 0.8);
 }
 
 .dark .text-blue-700 {
-  color: hsl(210 60% 75%);
+  color: hsl(var(--accent) / 0.9);
 }
 
 .dark .text-blue-800 {
-  color: hsl(210 60% 80%);
+  color: hsl(var(--accent));
 }
 
 .dark .hover\:text-blue-700:hover {
-  color: hsl(210 60% 75%);
+  color: hsl(var(--accent) / 0.9);
 }
 
 .dark .hover\:text-blue-800:hover {
-  color: hsl(210 60% 80%);
+  color: hsl(var(--accent));
 }
 
 /* Kanban no dark mode */
@@ -405,7 +405,7 @@
 
 /* Ajustes de cores para elementos de status */
 .dark .text-success {
-  color: hsl(142 60% 70%);
+  color: hsl(var(--primary) / 0.9);
 }
 
 .dark .text-warning {
@@ -417,7 +417,7 @@
 }
 
 .dark .text-info {
-  color: hsl(210 60% 70%);
+  color: hsl(var(--accent) / 0.9);
 }
 
 /* Ajustes específicos para gráficos no modo escuro */
