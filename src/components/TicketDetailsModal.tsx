@@ -601,30 +601,11 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                   Comentários
                 </h3>
                 
-                {/* Anexos de Imagens */}
-                <div className="mb-6">
-                  <h4 className="text-md font-medium text-gray-700 mb-3 flex items-center">
-                    <ImageIcon className="h-5 w-5 text-gray-500 mr-2" />
-                    Anexos
-                  </h4>
+                {/* Seção de anexos de imagens */}
+                <div className="mt-4">
+                  <h3 className="text-lg font-semibold mb-2">Anexos</h3>
                   <TicketImageAttachments
-                    existingImages={comments
-                      .filter(comment => comment.attachments?.length > 0)
-                      .flatMap(comment => 
-                        comment.attachments?.map(attachment => ({
-                          url: attachment.url,
-                          name: attachment.name || 'Imagem'
-                        })) || []
-                      )}
-                    onImagesChange={(images) => {
-                      images.forEach(async (image) => {
-                        try {
-                          await addImageComment(image.file);
-                        } catch (error) {
-                          console.error('Erro ao anexar imagem:', error);
-                        }
-                      });
-                    }}
+                    ticketId={ticket.id}
                   />
                 </div>
 

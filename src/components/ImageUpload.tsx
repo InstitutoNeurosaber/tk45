@@ -1,20 +1,78 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState, ReactNode } from 'react';
 import { useDropzone } from 'react-dropzone';
+import styled from 'styled-components';
 import { Upload, X, Image as ImageIcon, AlertCircle } from 'lucide-react';
-import { useImageUpload } from '../hooks/useImageUpload';
+import { useMongoImageUpload } from '../hooks/useMongoImageUpload';
 
 interface ImageUploadProps {
   onUploadComplete: (url: string) => void;
-  onUploadError?: (error: string) => void;
+  onError: (error: string) => void;
   maxFiles?: number;
   maxSize?: number; // em bytes
   className?: string;
   showPreview?: boolean;
 }
 
+interface DropzoneContainerProps {
+  isDragActive: boolean;
+  children: ReactNode;
+}
+
+interface ProgressBarProps {
+  progress: number;
+}
+
+const DropzoneContainer = ({ isDragActive, children }: DropzoneContainerProps) => {
+  const style = {
+    flex: 1,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    padding: '20px',
+    borderWidth: 2,
+    borderRadius: 8,
+    borderColor: isDragActive ? '#2196f3' : '#eeeeee',
+    borderStyle: 'dashed',
+    backgroundColor: '#fafafa',
+    color: '#bdbdbd',
+    outline: 'none',
+    transition: 'border .24s ease-in-out',
+    cursor: 'pointer',
+    ':hover': {
+      borderColor: '#2196f3'
+    }
+  } as const;
+
+  return <div style={style}>{children}</div>;
+};
+
+const ProgressBar = ({ progress }: ProgressBarProps) => {
+  const containerStyle = {
+    width: '100%',
+    height: '4px',
+    backgroundColor: '#eee',
+    marginTop: '10px',
+    borderRadius: '2px',
+    overflow: 'hidden'
+  } as const;
+
+  const progressStyle = {
+    width: `${progress}%`,
+    height: '100%',
+    backgroundColor: '#2196f3',
+    transition: 'width 0.3s ease'
+  } as const;
+
+  return (
+    <div style={containerStyle}>
+      <div style={progressStyle} />
+    </div>
+  );
+};
+
 export function ImageUpload({
   onUploadComplete,
-  onUploadError,
+  onError,
   maxFiles = 1,
   maxSize = 5 * 1024 * 1024, // 5MB por padrão
   className = '',
@@ -23,14 +81,15 @@ export function ImageUpload({
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
   const [rejectedFiles, setRejectedFiles] = useState<File[]>([]);
-  const { uploadImage, progress, isUploading, error } = useImageUpload();
+  const { uploadImage, progress, isUploading, error } = useMongoImageUpload();
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // Notifica erros para o componente pai
   React.useEffect(() => {
-    if (error && onUploadError) {
-      onUploadError(error);
+    if (error && onError) {
+      onError(error);
     }
-  }, [error, onUploadError]);
+  }, [error, onError]);
 
   const handleUpload = useCallback(async (file: File) => {
     try {
@@ -41,39 +100,64 @@ export function ImageUpload({
       setPreviews([]);
     } catch (error) {
       console.error('Erro no upload:', error);
-      if (onUploadError) {
-        onUploadError(error instanceof Error ? error.message : 'Erro desconhecido no upload');
+      if (onError) {
+        onError(error instanceof Error ? error.message : 'Erro desconhecido no upload');
       }
     }
-  }, [uploadImage, onUploadComplete, onUploadError]);
+  }, [uploadImage, onUploadComplete, onError]);
 
-  const onDrop = useCallback((acceptedFiles: File[], rejectedFiles: any[]) => {
-    // Limpa URLs anteriores para evitar memory leaks
-    previews.forEach(url => URL.revokeObjectURL(url));
-
-    // Atualiza arquivos rejeitados
-    setRejectedFiles(rejectedFiles.map(rejection => rejection.file));
-
-    // Cria URLs para preview
-    const newPreviews = acceptedFiles.map(file => URL.createObjectURL(file));
-    setPreviews(newPreviews);
-    setFiles(acceptedFiles);
-
-    // Se for upload único, faz o upload automaticamente
-    if (maxFiles === 1 && acceptedFiles.length > 0) {
-      handleUpload(acceptedFiles[0]);
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
+    if (acceptedFiles.length === 0) {
+      onError('Nenhum arquivo selecionado');
+      return;
     }
-  }, [previews, maxFiles, handleUpload]);
+
+    const file = acceptedFiles[0];
+    
+    // Validar tamanho do arquivo (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      onError('O arquivo é muito grande. O tamanho máximo é 5MB.');
+      return;
+    }
+
+    // Validar tipo do arquivo
+    if (!file.type.startsWith('image/')) {
+      onError('Apenas imagens são permitidas.');
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    try {
+      // Criar preview
+      const previewUrl = URL.createObjectURL(file);
+      setPreviews([previewUrl]);
+      setFiles([file]);
+
+      // Upload usando o hook do MongoDB
+      const url = await uploadImage(file);
+      setUploadProgress(100);
+      onUploadComplete(url);
+      
+      // Limpar previews e arquivos
+      setFiles([]);
+      setPreviews([]);
+    } catch (error: any) {
+      console.error('Erro no upload:', error);
+      onError(error.message || 'Erro ao fazer upload da imagem');
+    } finally {
+      setIsUploading(false);
+    }
+  }, [uploadImage, onUploadComplete, onError]);
 
   const { getRootProps, getInputProps, isDragActive, isDragReject } = useDropzone({
     onDrop,
     accept: {
-      'image/*': ['.jpeg', '.jpg', '.png', '.gif', '.webp']
+      'image/*': ['.jpeg', '.jpg', '.png', '.gif']
     },
-    maxFiles,
-    maxSize,
-    disabled: isUploading,
-    multiple: maxFiles > 1
+    maxFiles: 1,
+    disabled: isUploading
   });
 
   const removeFile = (index: number) => {
@@ -108,7 +192,7 @@ export function ImageUpload({
           )}
           
           {isDragActive && !isDragReject && (
-            <p className="text-center text-primary">Solte as imagens aqui...</p>
+            <p className="text-center text-primary">Solte a imagem aqui...</p>
           )}
           
           {isDragReject && (
@@ -120,7 +204,7 @@ export function ImageUpload({
           {!isDragActive && !isDragReject && (
             <div className="text-center">
               <p className="text-gray-600 dark:text-gray-400">
-                Arraste e solte imagens aqui, ou clique para selecionar
+                Arraste uma imagem aqui, ou clique para selecionar
               </p>
               <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
                 {maxFiles === 1 ? 'Máximo 1 arquivo' : `Máximo ${maxFiles} arquivos`} 
@@ -173,11 +257,11 @@ export function ImageUpload({
           <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
             <div
               className="bg-primary h-2.5 rounded-full transition-all"
-              style={{ width: `${progress}%` }}
+              style={{ width: `${uploadProgress}%` }}
             />
           </div>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            Enviando... {Math.round(progress)}%
+            Enviando... {Math.round(uploadProgress)}%
           </p>
         </div>
       )}
