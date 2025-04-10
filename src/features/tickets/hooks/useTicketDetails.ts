@@ -1,11 +1,37 @@
 import { useState } from 'react';
 import { useTicketStore } from '../../../stores/ticketStore';
+import { clickupService } from '../../../services/clickupService';
 import type { Ticket, TicketStatus, TicketPriority } from '../../../types/ticket';
 
 export function useTicketDetails(ticketId: string) {
   const { updateTicket, updateTicketStatus } = useTicketStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleUpdateTitle = async (newTitle: string) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Primeiro atualiza o título no Firestore
+      await updateTicket(ticketId, { 
+        title: newTitle,
+        updatedAt: new Date()
+      });
+
+      // Busca o ticket atualizado para sincronizar com o ClickUp
+      const ticketDoc = await updateTicket(ticketId, {}, true);
+      if (ticketDoc) {
+        // Sincroniza com o ClickUp
+        await clickupService.syncTicketWithClickUp(ticketDoc);
+      }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Erro ao atualizar título');
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleUpdateStatus = async (status: TicketStatus) => {
     try {
@@ -54,6 +80,7 @@ export function useTicketDetails(ticketId: string) {
   return {
     loading,
     error,
+    updateTitle: handleUpdateTitle,
     updateStatus: handleUpdateStatus,
     updatePriority: handleUpdatePriority,
     updateTicket: handleUpdateTicket

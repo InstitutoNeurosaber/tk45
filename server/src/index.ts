@@ -125,11 +125,30 @@ const listImagesHandler = async (_req: Request, res: Response, next: NextFunctio
   }
 };
 
+const deleteImageHandler = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const image = await Image.findByIdAndDelete(req.params.id);
+    
+    if (!image) {
+      res.status(404).json({ error: 'Imagem não encontrada' });
+      return;
+    }
+
+    res.json({ 
+      success: true,
+      message: 'Imagem excluída com sucesso' 
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // Rotas
 app.get('/api/test', testHandler);
 app.post('/api/upload', upload.single('image'), uploadHandler);
 app.get('/api/images/:id', getImageHandler);
 app.get('/api/images', listImagesHandler);
+app.delete('/api/images/:id', deleteImageHandler);
 
 // Middleware de erro
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {

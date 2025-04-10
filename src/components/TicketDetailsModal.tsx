@@ -30,7 +30,6 @@ import type { Ticket, TicketStatus, TicketPriority } from '../types/ticket';
 import { clickupService } from '../services/clickupService';
 import { Comments } from './Comments';
 import { TicketPriority as TicketPriorityComponent } from './TicketDetails/TicketPriority';
-import { TicketImageAttachments } from './TicketImageAttachments';
 import { useComments } from '../hooks/useComments';
 
 interface TicketDetailsModalProps {
@@ -48,6 +47,8 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [newTitle, setNewTitle] = useState(ticket.title);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [currentStatus, setCurrentStatus] = useState<TicketStatus>(ticket.status);
   const [currentPriority, setCurrentPriority] = useState<TicketPriority>(ticket.priority);
@@ -364,6 +365,45 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
     }
   };
 
+  const handleTitleChange = async () => {
+    if (!newTitle.trim()) {
+      setError('O título não pode estar vazio');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Atualizar no Firestore
+      await updateTicket(ticket.id, { 
+        title: newTitle.trim(),
+        updatedAt: new Date()
+      });
+
+      // Sincronizar com ClickUp
+      await clickupService.syncTicketWithClickUp({
+        ...ticket,
+        title: newTitle.trim(),
+        updatedAt: new Date()
+      });
+
+      // Atualizar estado local
+      onUpdate({
+        ...ticket,
+        title: newTitle.trim(),
+        updatedAt: new Date()
+      });
+
+      setIsEditingTitle(false);
+    } catch (error) {
+      console.error('Erro ao atualizar título:', error);
+      setError(error instanceof Error ? error.message : 'Erro ao atualizar título');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (error) {
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -394,7 +434,49 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
           <div className="relative px-8 py-6 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <div className="flex-1">
-                <h2 className="text-2xl font-bold text-gray-900 mb-3">{ticket.title}</h2>
+                <h2 className="text-2xl font-bold text-gray-900 mb-3">
+                  {isEditingTitle ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={newTitle}
+                        onChange={(e) => setNewTitle(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Título do ticket"
+                        onKeyPress={(e) => e.key === 'Enter' && handleTitleChange()}
+                      />
+                      <button
+                        onClick={handleTitleChange}
+                        disabled={loading}
+                        className="p-2 text-blue-600 hover:text-blue-800"
+                      >
+                        <Save className="h-5 w-5" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsEditingTitle(false);
+                          setNewTitle(ticket.title);
+                        }}
+                        className="p-2 text-gray-600 hover:text-gray-800"
+                      >
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <h2 className="text-2xl font-semibold text-gray-900 truncate">
+                        {ticket.title}
+                      </h2>
+                      <button
+                        onClick={() => setIsEditingTitle(true)}
+                        className="p-2 text-gray-600 hover:text-gray-800"
+                        title="Editar título"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </h2>
                 <div className="flex flex-wrap items-center gap-2">
                   <span className={`inline-flex items-center px-3 py-1.5 rounded-full text-sm font-medium ${
                     ticket.status === 'open' ? 'bg-red-100 text-red-800' :
@@ -601,14 +683,6 @@ export function TicketDetailsModal({ ticket, onClose, onStatusChange, onUpdate }
                   Comentários
                 </h3>
                 
-                {/* Seção de anexos de imagens */}
-                <div className="mt-4">
-                  <h3 className="text-lg font-semibold mb-2">Anexos</h3>
-                  <TicketImageAttachments
-                    ticketId={ticket.id}
-                  />
-                </div>
-
                 <div className="max-h-[400px]">
                   <Comments ticket={ticket} showHeader={false} />
                 </div>

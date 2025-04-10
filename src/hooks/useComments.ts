@@ -48,7 +48,12 @@ interface CommentAttachment {
   createdAt: Date;
 }
 
-export function useComments(ticketId: string) {
+interface UseCommentsProps {
+  ticketId: string;
+  uploadImage: (file: File) => Promise<string>;
+}
+
+export function useComments({ ticketId, uploadImage }: UseCommentsProps) {
   const { user } = useAuthStore();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,7 +102,7 @@ export function useComments(ticketId: string) {
               userId: data.userId,
               userName: data.userName,
               userPhotoURL: data.userPhotoURL,
-              createdAt: data.createdAt.toDate(),
+              createdAt: data.createdAt?.toDate() || new Date(),
               attachments: data.attachments || []
             };
           });
@@ -148,7 +153,7 @@ export function useComments(ticketId: string) {
           userId: data.userId,
           userName: data.userName,
           userPhotoURL: data.userPhotoURL,
-          createdAt: data.createdAt.toDate(),
+          createdAt: data.createdAt?.toDate() || new Date(),
           attachments: data.attachments || []
         };
       });
@@ -164,7 +169,7 @@ export function useComments(ticketId: string) {
       setHasMore(snapshot.docs.length === COMMENTS_PER_PAGE);
     } catch (err) {
       console.error('Erro ao carregar mais comentários:', err);
-      setError('Erro ao carregar mais comentários: ' + err.message);
+      setError('Erro ao carregar mais comentários: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setLoading(false);
     }
@@ -323,78 +328,34 @@ export function useComments(ticketId: string) {
         user: user.uid
       });
 
-      // Criar referência para o arquivo
-      const fileName = `${Date.now()}-${file.name}`;
-      const storageRef = ref(storage, `comments/${ticketId}/${fileName}`);
-      
-      console.log('Referência do storage criada:', storageRef.fullPath);
+      // Upload para o MongoDB usando a função recebida por props
+      const imageUrl = await uploadImage(file);
 
-      // Configurar metadata
-      const metadata = {
-        contentType: file.type,
-        customMetadata: {
-          uploadedBy: user.uid,
-          originalName: file.name
-        }
-      };
+      // Criar comentário
+      const commentsRef = collection(db, 'tickets', ticketId, 'comments');
+      await addDoc(commentsRef, {
+        content: `![${file.name}](${imageUrl})`,
+        userId: user.uid,
+        userName: user.displayName || 'Usuário',
+        userPhotoURL: user.photoURL || null,
+        createdAt: Timestamp.now(),
+        attachments: [{
+          url: imageUrl,
+          fileName: file.name,
+          fileType: file.type,
+          fileSize: file.size,
+          createdAt: new Date()
+        }]
+      });
 
-      // Upload direto com metadata
-      console.log('Iniciando upload com metadata...');
-      const uploadTask = uploadBytesResumable(storageRef, file, metadata);
-
-      // Monitorar progresso
-      uploadTask.on(
-        'state_changed',
-        (snapshot) => {
-          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-          console.log(`Progresso do upload: ${progress.toFixed(2)}%`);
-          console.log('Estado atual:', snapshot.state);
-        },
-        (error) => {
-          console.error('Erro durante upload:', error);
-          console.error('Código do erro:', error.code);
-          console.error('Mensagem do erro:', error.message);
-          setError(`Erro no upload: ${error.message}`);
-          setSubmitting(false);
-        },
-        async () => {
-          try {
-            console.log('Upload concluído, obtendo URL...');
-            const downloadUrl = await getDownloadURL(uploadTask.snapshot.ref);
-            console.log('URL obtida:', downloadUrl);
-
-            // Criar comentário
-            const commentsRef = collection(db, 'tickets', ticketId, 'comments');
-            await addDoc(commentsRef, {
-              content: `![${file.name}](${downloadUrl})`,
-              userId: user.uid,
-              userName: user.displayName || 'Usuário',
-              userPhotoURL: user.photoURL || null,
-              createdAt: serverTimestamp(),
-              attachments: [{
-                url: downloadUrl,
-                fileName: file.name,
-                fileType: file.type,
-                fileSize: file.size,
-                createdAt: new Date()
-              }]
-            });
-
-            console.log('Comentário criado com sucesso');
-            setSubmitting(false);
-          } catch (err) {
-            console.error('Erro ao finalizar processo:', err);
-            setError('Erro ao salvar o comentário');
-            setSubmitting(false);
-          }
-        }
-      );
+      console.log('Comentário criado com sucesso');
+      setSubmitting(false);
     } catch (err) {
-      console.error('Erro ao iniciar upload:', err);
-      setError('Erro ao iniciar upload da imagem');
+      console.error('Erro ao fazer upload da imagem:', err);
+      setError('Erro ao fazer upload da imagem');
       setSubmitting(false);
     }
-  }, [ticketId, user]);
+  }, [ticketId, user, uploadImage]);
 
   // Remover um comentário
   const deleteComment = useCallback(async (commentId: string) => {
@@ -420,14 +381,19 @@ export function useComments(ticketId: string) {
         throw new Error('Você não tem permissão para excluir este comentário');
       }
 
-      // Excluir anexos do Storage, se houver
+      // Excluir imagens do MongoDB, se houver
       if (comment.attachments && comment.attachments.length > 0) {
         for (const attachment of comment.attachments) {
-          const fileRef = ref(storage, attachment.url);
           try {
-            await deleteObject(fileRef);
+            // Extrair o ID da imagem da URL
+            const imageId = attachment.url.split('/').pop();
+            if (imageId) {
+              await fetch(`http://localhost:3000/api/images/${imageId}`, {
+                method: 'DELETE'
+              });
+            }
           } catch (error) {
-            console.warn('Erro ao excluir anexo:', error);
+            console.warn('Erro ao excluir imagem:', error);
             // Continua mesmo se falhar ao excluir o arquivo
           }
         }
@@ -445,11 +411,6 @@ export function useComments(ticketId: string) {
         if (ticketDoc.exists()) {
           const ticketData = ticketDoc.data();
           const currentCount = ticketData.commentCount || 0;
-          
-          // Nota: Atualmente o ClickUp não permite identificar facilmente qual comentário 
-          // deve ser excluído, pois não temos uma correlação direta entre os IDs.
-          // No futuro, seria possível adicionar o ID do comentário no sistema como 
-          // parte do texto do comentário no ClickUp para permitir essa sincronização.
           
           // Envia um comentário informando sobre a exclusão, se houver taskId
           if (ticketData.taskId) {

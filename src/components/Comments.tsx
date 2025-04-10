@@ -12,6 +12,7 @@ import {
 import { toast } from 'react-toastify';
 import { useComments } from '../hooks/useComments';
 import { useAuthStore } from '../stores/authStore';
+import { useMongoImageUpload } from '../hooks/useMongoImageUpload';
 import type { Ticket } from '../types/ticket';
 
 interface CommentsProps {
@@ -29,6 +30,7 @@ export function Comments({ ticket, showHeader = true }: CommentsProps) {
   const formRef = useRef<HTMLFormElement>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
   const loadMoreTriggerRef = useRef<HTMLDivElement>(null);
+  const { uploadImage } = useMongoImageUpload();
 
   const {
     comments,
@@ -40,7 +42,10 @@ export function Comments({ ticket, showHeader = true }: CommentsProps) {
     addComment,
     addImageComment,
     deleteComment
-  } = useComments(ticket.id);
+  } = useComments({ 
+    ticketId: ticket.id,
+    uploadImage
+  });
 
   // Configurar o Intersection Observer para carregar mais comentários
   useEffect(() => {
