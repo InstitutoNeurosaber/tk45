@@ -86,7 +86,7 @@ export function useComments({ ticketId, uploadImage }: UseCommentsProps) {
     const commentsRef = collection(db, 'tickets', ticketId, 'comments');
     const commentsQuery = query(
       commentsRef, 
-      orderBy('createdAt', 'asc'),
+      orderBy('createdAt', 'desc'),
       limit(COMMENTS_PER_PAGE)
     );
 
@@ -139,7 +139,7 @@ export function useComments({ ticketId, uploadImage }: UseCommentsProps) {
       const commentsRef = collection(db, 'tickets', ticketId, 'comments');
       const commentsQuery = query(
         commentsRef,
-        orderBy('createdAt', 'asc'),
+        orderBy('createdAt', 'desc'),
         startAfter(lastComment),
         limit(COMMENTS_PER_PAGE)
       );

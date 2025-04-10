@@ -14,6 +14,8 @@ import { useComments } from '../hooks/useComments';
 import { useAuthStore } from '../stores/authStore';
 import { useMongoImageUpload } from '../hooks/useMongoImageUpload';
 import type { Ticket } from '../types/ticket';
+import type { User as UserType } from '../types/user';
+import type { Comment } from '../types/Comment';
 
 interface CommentsProps {
   ticket: Ticket;
@@ -35,7 +37,7 @@ export function Comments({ ticket, showHeader = true }: CommentsProps) {
   const {
     comments,
     loading,
-    submitting,
+    submitting: commentsSubmitting,
     error,
     hasMore,
     loadMoreComments,
@@ -73,29 +75,44 @@ export function Comments({ ticket, showHeader = true }: CommentsProps) {
 
   // Rolar para o último comentário apenas quando um novo comentário for adicionado
   useEffect(() => {
-    if (commentsContainerRef.current && comments.length > 0) {
+    if (comments.length > 0) {
       const container = commentsContainerRef.current;
-      const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 300;
-      
-      if (isNearBottom) {
-        requestAnimationFrame(() => {
-          if (commentsContainerRef.current) {
-            commentsContainerRef.current.scrollTop = commentsContainerRef.current.scrollHeight;
-          }
-        });
+      if (container) {
+        // Verifica se o usuário está próximo do final antes de rolar automaticamente
+        const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+        
+        // Se estiver próximo do final ou se for um novo comentário, rola para o final
+        if (isNearBottom) {
+          container.scrollTo({
+            top: container.scrollHeight,
+            behavior: 'smooth'
+          });
+        }
       }
     }
-  }, [comments.length]);
+  }, [comments]);
+
+  // Função para rolar para o final dos comentários
+  const scrollToBottom = () => {
+    const container = commentsContainerRef.current;
+    if (container) {
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
+  };
 
   // Manipulador para enviar um comentário de texto
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
-    if (!newComment.trim() || submitting || !user) return;
+    if (!newComment.trim() || commentsSubmitting || !user) return;
 
     try {
       await addComment(newComment.trim());
       setNewComment('');
+      scrollToBottom(); // Rola para o final após enviar o comentário
       toast.success('Comentário enviado com sucesso!', {
         position: 'bottom-right',
         autoClose: 3000,
@@ -157,6 +174,7 @@ export function Comments({ ticket, showHeader = true }: CommentsProps) {
   const handleFile = async (file: File) => {
     try {
       await addImageComment(file);
+      scrollToBottom(); // Rola para o final após enviar a imagem
       toast.success('Imagem enviada com sucesso!', {
         position: 'bottom-right',
         autoClose: 3000,
@@ -460,8 +478,8 @@ export function Comments({ ticket, showHeader = true }: CommentsProps) {
             <div 
               ref={loadMoreTriggerRef}
               className="flex justify-center py-4"
-              aria-busy={loading}
               role="status"
+              aria-live="polite"
             >
               {loading ? (
                 <Loader className="h-6 w-6 text-primary animate-spin" />
@@ -496,7 +514,7 @@ export function Comments({ ticket, showHeader = true }: CommentsProps) {
             onKeyPress={handleKeyPress}
             onPaste={handlePaste}
             placeholder="Escreva um comentário..."
-            disabled={submitting || !user}
+            disabled={commentsSubmitting || !user}
             className="w-full px-4 py-3 pr-24 bg-white border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             aria-label="Campo de comentário"
           />
@@ -506,7 +524,7 @@ export function Comments({ ticket, showHeader = true }: CommentsProps) {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={submitting || !user}
+              disabled={commentsSubmitting || !user}
               className="p-2 rounded-full hover:bg-white text-gray-600 hover:text-blue-600 transition-colors"
               aria-label="Anexar imagem"
               title="Anexar imagem"
@@ -516,9 +534,9 @@ export function Comments({ ticket, showHeader = true }: CommentsProps) {
 
             <button
               type="submit"
-              disabled={!newComment.trim() || submitting || !user}
+              disabled={!newComment.trim() || commentsSubmitting || !user}
               className={`p-2 rounded-full ${
-                !newComment.trim() || submitting || !user
+                !newComment.trim() || commentsSubmitting || !user
                   ? 'text-gray-400'
                   : 'text-blue-600 hover:bg-white'
               } transition-colors`}
@@ -541,7 +559,7 @@ export function Comments({ ticket, showHeader = true }: CommentsProps) {
         </form>
         
         {/* Mensagem enquanto está enviando */}
-        {submitting && (
+        {commentsSubmitting && (
           <div 
             className="mt-2 text-xs text-gray-500 flex items-center justify-center"
             aria-live="polite"
